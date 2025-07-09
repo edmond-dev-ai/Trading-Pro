@@ -48,8 +48,6 @@ export const useDataService = () => {
         isLoadingRef.current = false;
     }, []);
 
-    // THE FIX: This function is now stable. It gets the latest state via getState()
-    // and has no unstable dependencies in its useCallback array. This is the key to stopping the lag.
     const fetchMoreHistory = useCallback(async () => {
         const { hasMoreHistory, liveData, symbol, timeframe, appendHistory, setHasMoreHistory } = useTradingProStore.getState();
         if (isLoadingRef.current || !hasMoreHistory || liveData.length === 0) return;
@@ -66,28 +64,27 @@ export const useDataService = () => {
         isLoadingRef.current = false;
     }, []);
 
-    const fetchReplayData = useCallback(async (startTime: UTCTimestamp) => {
-        const { symbol, timeframe, loadReplayData } = useTradingProStore.getState();
-        if (isLoadingRef.current) return;
+    const fetchMoreReplayHistory = useCallback(async () => {
+        const { hasMoreHistory, replayData, symbol, timeframe, prependReplayHistory } = useTradingProStore.getState();
+        if (isLoadingRef.current || !hasMoreHistory || replayData.length === 0) return;
+
         isLoadingRef.current = true;
-        const endDate = new Date((startTime as number) * 1000).toISOString().split('T')[0];
-        const initialReplayData = await fetchChunk(symbol, timeframe, 2000, endDate);
-        loadReplayData(initialReplayData);
-        isLoadingRef.current = false;
-    }, []);
-    
-    const fetchNextReplayChunk = useCallback(async () => {
-        const { replayData, symbol, timeframe } = useTradingProStore.getState();
-        if (isLoadingRef.current || replayData.length === 0) return;
-        isLoadingRef.current = true;
-        const lastDataPoint = replayData[replayData.length - 1];
-        const afterDate = new Date((lastDataPoint.time as number) * 1000).toISOString();
-        const nextChunk = await fetchChunk(symbol, timeframe, 2000, undefined, afterDate);
-        if (nextChunk.length > 0) {
-            useTradingProStore.setState(state => ({ replayData: [...state.replayData, ...nextChunk] }));
-        }
+        const oldestDataPoint = replayData[0];
+        const endDate = new Date((oldestDataPoint.time as number) * 1000).toISOString().split('T')[0];
+        const pastData = await fetchChunk(symbol, timeframe, 2000, endDate);
+        
+        prependReplayHistory(pastData, pastData.length > 0);
         isLoadingRef.current = false;
     }, []);
 
-    return { loadInitialDataForTimeframe, fetchMoreHistory, fetchReplayData, fetchNextReplayChunk };
+    const fetchFullDatasetForTimeframe = useCallback(async (tf: string): Promise<AppData[]> => {
+        const { symbol } = useTradingProStore.getState();
+        if (isLoadingRef.current) return [];
+        isLoadingRef.current = true;
+        const data = await fetchChunk(symbol, tf, 5000, new Date().toISOString().split('T')[0]);
+        isLoadingRef.current = false;
+        return data;
+    }, []);
+    
+    return { loadInitialDataForTimeframe, fetchMoreHistory, fetchMoreReplayHistory, fetchFullDatasetForTimeframe };
 };

@@ -12,7 +12,7 @@ interface ChartComponentProps {
     onChartClick: (time: UTCTimestamp) => void;
     isClickArmed: boolean;
     shouldRescale: boolean;
-    shouldScrollToReplayStart: boolean;
+    replayScrollToTime: UTCTimestamp | null;
     onReplayScrolled: () => void;
 }
 
@@ -54,7 +54,7 @@ const seriesOptions: CandlestickSeriesPartialOptions = {
 };
 
 const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
-    ({ data, onVisibleLogicalRangeChange, onChartClick, isClickArmed, shouldRescale, shouldScrollToReplayStart, onReplayScrolled }, ref) => {
+    ({ data, onVisibleLogicalRangeChange, onChartClick, isClickArmed, shouldRescale, replayScrollToTime, onReplayScrolled }, ref) => {
         const chartContainerRef = useRef<HTMLDivElement>(null);
         const chartRef = useRef<IChartApi | null>(null);
         const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -67,7 +67,7 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
                 if (!chart) return;
                 const dataIndex = data.findIndex(d => d.time === time);
                 if (dataIndex !== -1) {
-                    chart.timeScale().scrollToPosition(dataIndex, true);
+                    chart.timeScale().scrollToPosition(dataIndex, false);
                 }
             },
         }));
@@ -93,15 +93,31 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
 
             seriesRef.current.setData(data);
             
-            // THE FIX: Only call fitContent when explicitly told to.
             if (shouldRescale && data.length > 0) {
                 chart.timeScale().fitContent();
             }
-            if (shouldScrollToReplayStart && data.length > 0) {
-                chart.timeScale().scrollToRealTime();
-                onReplayScrolled();
-            }
-        }, [data, shouldRescale, shouldScrollToReplayStart, onReplayScrolled]);
+        }, [data, shouldRescale]);
+
+        useEffect(() => {
+            const chart = chartRef.current;
+            if (!chart || !replayScrollToTime || data.length === 0) return;
+        
+            const targetIndex = data.findIndex(d => d.time === replayScrollToTime);
+            if (targetIndex === -1) return;
+        
+            const visibleRange = chart.timeScale().getVisibleLogicalRange();
+            if (!visibleRange) return;
+        
+            const visibleWidth = visibleRange.to - visibleRange.from;
+            const newFrom = targetIndex - visibleWidth / 2;
+            const newTo = targetIndex + visibleWidth / 2;
+        
+            // THE FIX: Use setVisibleLogicalRange to scroll using data indexes
+            chart.timeScale().setVisibleLogicalRange({ from: newFrom, to: newTo });
+        
+            onReplayScrolled();
+        
+        }, [replayScrollToTime, data, onReplayScrolled]);
 
         useEffect(() => {
             const chart = chartRef.current;
@@ -136,9 +152,6 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
         }, [isClickArmed, onChartClick, onVisibleLogicalRangeChange]);
         
         useEffect(() => {
-            if (chartContainerRef.current) {
-                chartContainerRef.current.style.cursor = isClickArmed ? 'crosshair' : 'default';
-            }
             chartRef.current?.applyOptions({
                 crosshair: {
                     vertLine: { width: (isClickArmed ? 2 : 1) as LineWidth },
@@ -148,7 +161,7 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
         }, [isClickArmed]);
 
         return (
-            <div ref={chartContainerRef} className='w-full h-full relative'>
+            <div ref={chartContainerRef} className='w-full h-full relative cursor-crosshair'>
                 {tooltip.visible && (
                     <div 
                         className='absolute z-10 py-1 px-2 bg-gray-700 bg-opacity-80 backdrop-blur-sm text-white text-[11px] rounded-md pointer-events-none' 
