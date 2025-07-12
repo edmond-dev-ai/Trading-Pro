@@ -7,12 +7,12 @@ import { FastTimeframeInput } from './components/FastTimeframeInput';
 import { useTradingProStore } from './store/store';
 import { useDataService } from './hooks/useDataService';
 import { useReplayEngine } from './hooks/useReplayEngine';
-import type { LogicalRange } from 'lightweight-charts';
+import type { LogicalRange, UTCTimestamp } from 'lightweight-charts';
 
 const ScrollToRecentButton = ({ onClick }: { onClick: () => void }) => (
-    <button 
-        onClick={onClick} 
-        className="absolute bottom-20 right-5 z-20 bg-gray-700 bg-opacity-80 backdrop-blur-sm p-2 rounded-full text-white hover:bg-gray-600 transition-colors duration-300" 
+    <button
+        onClick={onClick}
+        className="absolute bottom-20 right-5 z-20 bg-gray-700 bg-opacity-80 backdrop-blur-sm p-2 rounded-full text-white hover:bg-gray-600 transition-colors duration-300"
         title="Scroll to the most recent bar"
     >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -23,22 +23,23 @@ const ScrollToRecentButton = ({ onClick }: { onClick: () => void }) => (
 
 function App() {
     const { loadInitialDataForTimeframe, fetchMoreHistory, fetchMoreReplayHistory, fetchFullDatasetForTimeframe } = useDataService();
-    const { selectReplayStart } = useReplayEngine();
+    // FIX: Get the new proactive fetch function from the hook.
+    const { proactivelyFetchNextChunk, ...replayEngine } = useReplayEngine();
 
     const {
-        liveData, 
-        replayData, 
-        replayState, 
-        replayCurrentIndex, 
-        symbol, 
+        liveData,
+        replayData,
+        replayState,
+        replayCurrentIndex,
+        symbol,
         timeframe,
-        hasMoreHistory, 
-        isAtLiveEdge, 
+        hasMoreHistory,
+        isAtLiveEdge,
         replayScrollToTime,
-        replayPreciseTimestamp,
+        replayAnchor,
         setReplayData,
-        setTimeframe, 
-        setIsAtLiveEdge, 
+        setTimeframe,
+        setIsAtLiveEdge,
         setReplayScrollToTime,
     } = useTradingProStore();
 
@@ -48,26 +49,29 @@ function App() {
     const [isTimeframeInputOpen, setIsTimeframeInputOpen] = useState(false);
     const [timeframeInputValue, setTimeframeInputValue] = useState('');
 
-    // Handle initial data loading and timeframe changes
     useEffect(() => {
         const controller = new AbortController();
-        if (replayState === 'idle') {
-            loadInitialDataForTimeframe(timeframe, controller.signal);
-        } else if (replayPreciseTimestamp) {
-            fetchFullDatasetForTimeframe(timeframe).then(newReplayData => {
-                if (newReplayData.length > 0 && replayPreciseTimestamp) {
-                    const newIndex = newReplayData.findIndex(d => d.time >= replayPreciseTimestamp)
-                    if (newIndex !== -1) {
-                        setReplayData(newReplayData, newIndex);
-                    }
+        const fetchData = async () => {
+            if (replayState === 'idle') {
+                await loadInitialDataForTimeframe(timeframe, controller.signal);
+            }
+            else if (replayAnchor) {
+                const newReplayData = await fetchFullDatasetForTimeframe(timeframe);
+                if (newReplayData.length > 0) {
+                    const newIndex = newReplayData.length - 1;
+                    setReplayData(newReplayData, newIndex);
+                    setReplayScrollToTime(newReplayData[newIndex].time);
+                    // FIX: Immediately fetch the next chunk after a successful timeframe switch.
+                    proactivelyFetchNextChunk();
                 }
-            });
-        }
+            }
+        };
+
+        fetchData();
         return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [symbol, timeframe]); 
+    }, [symbol, timeframe]);
 
-    // THE FIX: Only trigger a full rescale when the symbol changes, not the timeframe.
     useEffect(() => {
         if (replayState === 'idle') {
             shouldRescaleRef.current = true;
@@ -81,41 +85,42 @@ function App() {
             : liveData;
     }, [replayState, replayData, replayCurrentIndex, liveData]);
 
-    // THE FIX: Restore the stable callback for scrolling to prevent performance issues.
     const handleVisibleLogicalRangeChange = useCallback((range: LogicalRange | null) => {
         if (!range || dataForChart.length === 0) return;
 
-        const { 
-            replayState: currentReplayState, 
-            hasMoreHistory: currentHasMoreHistory 
+        const {
+            replayState: currentReplayState,
+            hasMoreHistory: currentHasMoreHistory
         } = useTradingProStore.getState();
-        
-        if (currentReplayState === 'idle') {
-            const isAtEdge = range.to >= dataForChart.length - 1;
-            setIsAtLiveEdge(isAtEdge);
-            if (range.from < 50 && currentHasMoreHistory) {
+
+        const isAtEdge = range.to >= dataForChart.length;
+        setIsAtLiveEdge(isAtEdge);
+
+        if (range.from < 50 && currentHasMoreHistory) {
+            if (currentReplayState === 'idle') {
                 fetchMoreHistory();
-            }
-        } else {
-            if (range.from < 50 && currentHasMoreHistory) {
+            } else {
                 fetchMoreReplayHistory();
             }
-            setIsAtLiveEdge(true);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dataForChart.length]);
+    }, [dataForChart.length, fetchMoreHistory, fetchMoreReplayHistory, setIsAtLiveEdge]);
 
     const handleScrollToRecent = useCallback(() => {
-        chartComponentRef.current?.scrollToRealtime();
-    }, []);
+        if (replayState === 'idle') {
+            chartComponentRef.current?.scrollToRealtime();
+        } else if (replayData.length > 0 && replayCurrentIndex >= 0) {
+            const lastCandleTime = replayData[replayCurrentIndex].time;
+            chartComponentRef.current?.scrollToTime(lastCandleTime);
+        }
+    }, [replayState, replayData, replayCurrentIndex]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (document.activeElement instanceof HTMLInputElement || 
+            if (document.activeElement instanceof HTMLInputElement ||
                 document.activeElement instanceof HTMLSelectElement) {
                 return;
             }
-            
+
             if (e.key >= '0' && e.key <= '9' && !isTimeframeInputOpen) {
                 e.preventDefault();
                 setTimeframeInputValue(e.key);
@@ -128,14 +133,16 @@ function App() {
     }, [isTimeframeInputOpen]);
 
     const handleTimeframeConfirm = useCallback((tf: string) => {
-        setTimeframe(tf);
+        if (tf !== timeframe) {
+           setTimeframe(tf);
+        }
         setIsTimeframeInputOpen(false);
-    }, [setTimeframe]);
+    }, [setTimeframe, timeframe]);
 
     const handleTimeframeInputClose = useCallback(() => {
         setIsTimeframeInputOpen(false);
     }, []);
-    
+
     useEffect(() => {
         if (shouldRescaleRef.current) {
             shouldRescaleRef.current = false;
@@ -146,10 +153,8 @@ function App() {
         setReplayScrollToTime(null);
     }, [setReplayScrollToTime]);
 
-    const showScrollButton = useMemo(() => {
-        return !isAtLiveEdge && replayState === 'idle';
-    }, [isAtLiveEdge, replayState]);
-    
+    const showScrollButton = !isAtLiveEdge;
+
     const shouldRescaleChart = shouldRescaleRef.current && replayState === 'idle';
 
     return (
@@ -162,30 +167,36 @@ function App() {
                     onClose={handleTimeframeInputClose}
                 />
             )}
-            
+
             <header className='absolute top-4 left-4 z-20 flex items-center space-x-4'>
                 <SymbolSelect />
                 <TimeframeSelect />
             </header>
-            
+
             <main className='flex-grow pt-16 relative'>
                 <ChartComponent
                     ref={chartComponentRef}
                     data={dataForChart}
-                    onChartClick={selectReplayStart}
+                    onChartClick={replayEngine.selectReplayStart}
                     isClickArmed={replayState === 'arming'}
                     shouldRescale={shouldRescaleChart}
                     onVisibleLogicalRangeChange={handleVisibleLogicalRangeChange}
                     replayScrollToTime={replayScrollToTime}
                     onReplayScrolled={handleReplayScrolled}
                 />
-                
+
                 {showScrollButton && (
                     <ScrollToRecentButton onClick={handleScrollToRecent} />
                 )}
             </main>
-            
-            <ReplayControls />
+
+            <ReplayControls
+                enterReplayMode={replayEngine.enterReplayMode}
+                startArming={replayEngine.startArming}
+                play={replayEngine.play}
+                pause={replayEngine.pause}
+                exitReplay={replayEngine.exitReplay}
+            />
         </div>
     );
 }

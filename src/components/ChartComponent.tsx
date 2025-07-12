@@ -43,7 +43,7 @@ const chartOptions = {
     },
     crosshair: { 
         mode: CrosshairMode.Normal,
-        horzLine: { labelVisible: false },
+        horzLine: { labelVisible: true, labelBackgroundColor: '#374151' },
         vertLine: { labelVisible: false }
     },
 };
@@ -112,7 +112,6 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
             const newFrom = targetIndex - visibleWidth / 2;
             const newTo = targetIndex + visibleWidth / 2;
         
-            // THE FIX: Use setVisibleLogicalRange to scroll using data indexes
             chart.timeScale().setVisibleLogicalRange({ from: newFrom, to: newTo });
         
             onReplayScrolled();

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { parseTimeframeInput } from '../utils/timeframeParser';
 
 interface FastTimeframeInputProps {
     inputValue: string;
@@ -8,13 +9,16 @@ interface FastTimeframeInputProps {
 }
 
 export const FastTimeframeInput = ({ inputValue, onInputChange, onConfirm, onClose }: FastTimeframeInputProps) => {
-    const [unit, setUnit] = useState<'m' | 'H' | 'D' | 'W' | 'Mo'>('m');
     const inputRef = useRef<HTMLInputElement>(null);
+    const [parsedResult, setParsedResult] = useState<{ api: string, display: string } | null>(null);
 
-    // Focus the input field when the component mounts
+    // Focus the input and move the cursor to the end
     useEffect(() => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
+        const input = inputRef.current;
+        if (input) {
+            input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
+        }
     }, []);
 
     // Handle key presses for confirming or closing
@@ -28,11 +32,17 @@ export const FastTimeframeInput = ({ inputValue, onInputChange, onConfirm, onClo
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [inputValue, unit]); // Re-bind when state changes
+    }, [inputValue, parsedResult]);
+
+    // Parse the input whenever it changes
+    useEffect(() => {
+        const result = parseTimeframeInput(inputValue);
+        setParsedResult(result);
+    }, [inputValue]);
 
     const handleConfirm = () => {
-        if (inputValue && parseInt(inputValue) > 0) {
-            onConfirm(`${inputValue}${unit}`);
+        if (parsedResult) {
+            onConfirm(parsedResult.api);
         } else {
             onClose();
         }
@@ -40,37 +50,24 @@ export const FastTimeframeInput = ({ inputValue, onInputChange, onConfirm, onClo
 
     return (
         <div 
-            className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center pt-20 z-50"
-            onClick={onClose} // Close when clicking the overlay
+            className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50"
+            onClick={onClose}
         >
             <div 
-                className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-4 flex items-center space-x-2"
-                onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside the box
+                className="bg-[#1e222d] rounded-md shadow-2xl p-4 w-60 text-center"
+                onClick={(e) => e.stopPropagation()}
             >
+                <h3 className="text-gray-400 text-sm mb-4">Change interval</h3>
                 <input
                     ref={inputRef}
                     type="text"
                     value={inputValue}
-                    onChange={(e) => onInputChange(e.target.value.replace(/[^0-9]/g, ''))}
-                    className="bg-gray-900 text-white text-lg font-mono w-24 p-2 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => onInputChange(e.target.value)}
+                    className="bg-transparent text-white text-1xl font-light w-40 text-center focus:outline-none px-2 py-2 border border-blue-500 rounded-md uppercase"
                 />
-                <select
-                    value={unit}
-                    onChange={(e) => setUnit(e.target.value as any)}
-                    className="bg-gray-700 text-white text-lg font-mono p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                    <option value="m">Minutes</option>
-                    <option value="H">Hours</option>
-                    <option value="D">Days</option>
-                    <option value="W">Weeks</option>
-                    <option value="Mo">Months</option>
-                </select>
-                <button
-                    onClick={handleConfirm}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors"
-                >
-                    Go
-                </button>
+                <div className="text-gray-500 text-sm h-5 mt-3">
+                    {parsedResult ? parsedResult.display : (inputValue ? 'Invalid format' : ' ')}
+                </div>
             </div>
         </div>
     );

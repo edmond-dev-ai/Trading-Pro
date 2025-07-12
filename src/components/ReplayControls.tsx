@@ -1,6 +1,13 @@
 import { useTradingProStore } from '../store/store';
-// THE FIX: Import the correct hook
-import { useReplayEngine } from '../hooks/useReplayEngine';
+
+// THE FIX: Define the props that will be passed down from App.tsx
+interface ReplayControlsProps {
+    enterReplayMode: () => void;
+    startArming: () => void;
+    play: () => void;
+    pause: () => void;
+    exitReplay: () => void;
+}
 
 const RewindIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z" /></svg>;
 const StepBackwardIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>;
@@ -9,15 +16,12 @@ const PauseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w
 const StepForwardIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>;
 const ExitIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
 
-export const ReplayControls = () => {
+export const ReplayControls = ({ enterReplayMode, startArming, play, pause, exitReplay }: ReplayControlsProps) => {
     const replayState = useTradingProStore((state) => state.replayState);
     const replaySpeed = useTradingProStore((state) => state.replaySpeed);
     const setReplaySpeed = useTradingProStore((state) => state.setReplaySpeed);
     const stepReplayForward = useTradingProStore((state) => state.stepReplayForward);
     const stepReplayBackward = useTradingProStore((state) => state.stepReplayBackward);
-
-    // THE FIX: Destructure from the correct hook
-    const { enterReplayMode, startArming, play, pause, exitReplay } = useReplayEngine();
 
     if (replayState === 'idle') {
         return (

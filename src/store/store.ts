@@ -3,6 +3,10 @@ import type { CandlestickData, UTCTimestamp } from 'lightweight-charts';
 
 export type AppData = Omit<CandlestickData<UTCTimestamp>, 'time'> & { time: UTCTimestamp };
 export type ReplayState = 'idle' | 'standby' | 'arming' | 'active' | 'paused';
+export interface ReplayAnchor {
+  time: UTCTimestamp;
+  timeframe: string;
+}
 
 export interface TradingProState {
   symbol: string;
@@ -17,8 +21,8 @@ export interface TradingProState {
   replayCurrentIndex: number;
   replaySpeed: number;
   replayScrollToTime: UTCTimestamp | null;
-  replayPreciseTimestamp: UTCTimestamp | null;
-  
+  replayAnchor: ReplayAnchor | null;
+
   // Actions
   setSymbol: (symbol: string) => void;
   setTimeframe: (timeframe: string) => void;
@@ -31,27 +35,29 @@ export interface TradingProState {
   setHasMoreHistory: (hasMore: boolean) => void;
   setIsAtLiveEdge: (isAtEdge: boolean) => void;
   setReplayState: (state: ReplayState) => void;
-  loadReplayData: (fullData: AppData[], startIndex: number) => void;
+  loadReplayData: (fullData: AppData[], startIndex: number, anchor: ReplayAnchor | null) => void;
   setReplayData: (data: AppData[], newIndex: number) => void;
   stepReplayForward: () => void;
   stepReplayBackward: () => void;
   setReplaySpeed: (speed: number) => void;
   setReplayScrollToTime: (time: UTCTimestamp | null) => void;
-  setReplayPreciseTimestamp: (time: UTCTimestamp | null) => void;
+  setReplayAnchor: (anchor: ReplayAnchor | null) => void;
+  appendReplayData: (futureData: AppData[]) => void; // FIX: Add new action
 }
 
-const timeframeToMinutes = (tf: string): number => {
+export const timeframeToMinutes = (tf: string): number => {
+    if (!tf) return 0;
     const unitMatch = tf.match(/[a-zA-Z]+$/);
     const valueMatch = tf.match(/^\d+/);
     if (!unitMatch || !valueMatch) return Infinity;
-    const unit = unitMatch[0];
+    const unit = unitMatch[0].toUpperCase();
     const value = parseInt(valueMatch[0], 10);
     switch (unit) {
-        case 'm': return value;
+        case 'M': return value;
         case 'H': return value * 60;
         case 'D': return value * 1440;
         case 'W': return value * 10080;
-        case 'Mo': return value * 43200;
+        case 'MO': return value * 43200;
         default: return Infinity;
     }
 }
@@ -69,9 +75,9 @@ export const useTradingProStore = create<TradingProState>((set, get) => ({
   replayCurrentIndex: -1,
   replaySpeed: 1,
   replayScrollToTime: null,
-  replayPreciseTimestamp: null,
+  replayAnchor: null,
   setSymbol: (symbol) => set({ symbol, liveData: [], hasMoreHistory: true, isAtLiveEdge: true }),
-  setTimeframe: (timeframe) => set({ timeframe, hasMoreHistory: true, isAtLiveEdge: true }),
+  setTimeframe: (timeframe) => set({ timeframe }),
   toggleFavorite: (tf) => set((state) => {
       const newFavorites = state.favoriteTimeframes.includes(tf)
           ? state.favoriteTimeframes.filter(fav => fav !== tf)
@@ -97,43 +103,49 @@ export const useTradingProStore = create<TradingProState>((set, get) => ({
   setHasMoreHistory: (hasMore) => set({ hasMoreHistory: hasMore }),
   setIsAtLiveEdge: (isAtEdge) => set({ isAtLiveEdge: isAtEdge }),
   setReplayState: (state) => set({ replayState: state }),
-  loadReplayData: (fullData, startIndex) => {
-    const startTime = fullData[startIndex]?.time;
-    set({ 
-        replayData: fullData, 
+  loadReplayData: (fullData, startIndex, anchor) => {
+    set({
+        replayData: fullData,
         replayCurrentIndex: startIndex,
-        replayPreciseTimestamp: startTime ?? null,
-        hasMoreHistory: true, 
+        replayAnchor: anchor,
+        hasMoreHistory: true,
     });
   },
   setReplayData: (data, newIndex) => set({
       replayData: data,
       replayCurrentIndex: newIndex,
-      hasMoreHistory: true, 
+      hasMoreHistory: true,
   }),
   stepReplayForward: () => {
-    const { replayCurrentIndex, replayData } = get();
-    if (replayCurrentIndex >= replayData.length - 1) {
-        set({ replayState: 'paused' });
-        return;
+    const { replayCurrentIndex, replayData, timeframe } = get();
+    // This function can now be simpler. The engine handles fetching more data.
+    if (replayCurrentIndex < replayData.length - 1) {
+        const newIndex = replayCurrentIndex + 1;
+        const newCandle = replayData[newIndex];
+        if (newCandle) {
+            set({
+                replayCurrentIndex: newIndex,
+                replayAnchor: { time: newCandle.time, timeframe },
+            });
+        }
     }
-    const newIndex = replayCurrentIndex + 1;
-    const newTime = replayData[newIndex]?.time;
-    set({ 
-        replayCurrentIndex: newIndex,
-        replayPreciseTimestamp: newTime ?? null,
-    });
   },
   stepReplayBackward: () => {
-    const { replayCurrentIndex, replayData } = get();
+    const { replayCurrentIndex, replayData, timeframe } = get();
     const newIndex = Math.max(replayCurrentIndex - 1, 0);
-    const newTime = replayData[newIndex]?.time;
-    set({ 
-        replayCurrentIndex: newIndex,
-        replayPreciseTimestamp: newTime ?? null,
-    });
+    const newCandle = replayData[newIndex];
+    if (newCandle) {
+        set({
+            replayCurrentIndex: newIndex,
+            replayAnchor: { time: newCandle.time, timeframe },
+        });
+    }
   },
   setReplaySpeed: (speed) => set({ replaySpeed: speed }),
   setReplayScrollToTime: (time) => set({ replayScrollToTime: time }),
-  setReplayPreciseTimestamp: (time) => set({ replayPreciseTimestamp: time }),
+  setReplayAnchor: (anchor) => set({ replayAnchor: anchor }),
+  // FIX: Implement the new action
+  appendReplayData: (futureData) => set((state) => ({
+    replayData: [...state.replayData, ...futureData]
+  })),
 }));
