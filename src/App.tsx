@@ -45,13 +45,33 @@ function App() {
 
     const chartComponentRef = useRef<ChartHandle>(null);
     const shouldRescaleRef = useRef(true);
+    const previousReplayStateRef = useRef(replayState);
+    const isExitingReplayRef = useRef(false);
 
     const [isTimeframeInputOpen, setIsTimeframeInputOpen] = useState(false);
     const [timeframeInputValue, setTimeframeInputValue] = useState('');
 
+    // Track replay state changes to detect when we're exiting replay
+    useEffect(() => {
+        if (previousReplayStateRef.current !== 'idle' && replayState === 'idle') {
+            isExitingReplayRef.current = true;
+            // Reset the flag after a brief delay to allow the data fetch to complete
+            setTimeout(() => {
+                isExitingReplayRef.current = false;
+            }, 100);
+        }
+        previousReplayStateRef.current = replayState;
+    }, [replayState]);
+
     useEffect(() => {
         const controller = new AbortController();
         const fetchData = async () => {
+            // Skip data fetching if we're currently exiting replay
+            // The exitReplay function will handle loading the live data
+            if (isExitingReplayRef.current) {
+                return;
+            }
+
             if (replayState === 'idle') {
                 await loadInitialDataForTimeframe(timeframe, controller.signal);
             }

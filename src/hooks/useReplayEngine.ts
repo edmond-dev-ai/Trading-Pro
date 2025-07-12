@@ -7,6 +7,7 @@ export const useReplayEngine = () => {
     const {
         replayState,
         replaySpeed,
+        timeframe,
         setReplayState,
         stepReplayForward,
         stepReplayBackward,
@@ -15,7 +16,7 @@ export const useReplayEngine = () => {
         appendReplayData,
     } = useTradingProStore();
 
-    const { fetchFullDatasetForTimeframe, fetchFutureReplayChunk } = useDataService();
+    const { fetchFullDatasetForTimeframe, fetchFutureReplayChunk, loadInitialDataForTimeframe } = useDataService();
     const playIntervalRef = useRef<number | undefined>(undefined);
     const isFetchingFuture = useRef(false);
 
@@ -87,14 +88,13 @@ export const useReplayEngine = () => {
         }
     }, [setReplayState]);
 
-    // FIX: This function is now defined with useCallback to ensure it has access to the latest state.
     const selectReplayStart = useCallback(async (time: UTCTimestamp) => {
-        // FIX: Directly get the latest timeframe from the store inside the function
         const currentGlobalTimeframe = useTradingProStore.getState().timeframe;
 
         if (useTradingProStore.getState().replayState === 'arming') {
-            setReplayState('standby');
-            // Use the fresh timeframe value for the fetch
+            // By removing the state change to 'standby', we prevent the chart from
+            // flashing live data. The UI remains in the 'arming' state (e.g., cursor change)
+            // until the data is fetched and ready.
             const fullData = await fetchFullDatasetForTimeframe(currentGlobalTimeframe);
             if (!fullData || fullData.length === 0) {
                 console.error("Failed to fetch data for replay start.");
@@ -103,9 +103,9 @@ export const useReplayEngine = () => {
             }
             const startIndex = fullData.findIndex(d => d.time === time);
             if (startIndex !== -1) {
-                // Use the fresh timeframe value for the anchor
                 const anchor = { time, timeframe: currentGlobalTimeframe };
                 loadReplayData(fullData, startIndex, anchor);
+                // The state transitions directly to 'paused' once data is loaded.
                 setReplayState('paused');
                 setReplayScrollToTime(time);
                 proactivelyFetchNextChunk();
@@ -115,7 +115,6 @@ export const useReplayEngine = () => {
             }
         }
     }, [fetchFullDatasetForTimeframe, setReplayState, loadReplayData, setReplayScrollToTime, proactivelyFetchNextChunk]);
-
 
     const play = useCallback(() => {
         if (useTradingProStore.getState().replayState === 'paused') {
@@ -129,10 +128,33 @@ export const useReplayEngine = () => {
         }
     }, [setReplayState]);
 
-    const exitReplay = useCallback(() => {
+    const exitReplay = useCallback(async () => {
+        // Get the current timeframe before clearing replay data
+        const currentTimeframe = useTradingProStore.getState().timeframe;
+        
+        // Clear replay data and set state to idle
         setReplayState('idle');
         loadReplayData([], -1, null);
-    }, [setReplayState, loadReplayData]);
+        
+        // Immediately load the live data for the current timeframe
+        // This prevents the flash by ensuring data is available right away
+        try {
+            const controller = new AbortController();
+            await loadInitialDataForTimeframe(currentTimeframe, controller.signal);
+        } catch (error) {
+            console.error("Failed to load live data after exiting replay:", error);
+        }
+    }, [setReplayState, loadReplayData, loadInitialDataForTimeframe]);
 
-    return { enterReplayMode, startArming, selectReplayStart, play, pause, exitReplay, stepForward: stepReplayForward, stepBackward: stepReplayBackward, proactivelyFetchNextChunk };
+    return { 
+        enterReplayMode, 
+        startArming, 
+        selectReplayStart, 
+        play, 
+        pause, 
+        exitReplay, 
+        stepForward: stepReplayForward, 
+        stepBackward: stepReplayBackward, 
+        proactivelyFetchNextChunk 
+    };
 };
