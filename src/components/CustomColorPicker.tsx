@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus } from 'lucide-react';
+import { ColorCanvas } from './ColorCanvas';
+import { HueSlider } from './HueSlider';
 
 interface CustomColorPickerProps {
     color: string;
@@ -62,6 +64,18 @@ const rgbToHsl = (r: number, g: number, b: number) => {
     return { h: h * 360, s: s * 100, l: l * 100 };
 };
 
+// Helper to convert HSL to hex
+const hslToHex = (h: number, s: number, l: number) => {
+    l /= 100;
+    const a = s * Math.min(l, 1 - l) / 100;
+    const f = (n: number) => {
+        const k = (n + h / 30) % 12;
+        const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+        return Math.round(255 * color).toString(16).padStart(2, '0');
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
+};
+
 // TradingView default color palette
 const defaultColors = [
     ['#ffffff', '#e8e8e8', '#d1d1d1', '#b8b8b8', '#a0a0a0', '#888888', '#707070', '#585858', '#404040', '#000000'],
@@ -81,26 +95,13 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
     const [lightness, setLightness] = useState(50);
     const [opacity, setOpacity] = useState(100);
 
-    const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
-    const [isDraggingHue, setIsDraggingHue] = useState(false);
-    
     const pickerRef = useRef<HTMLDivElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const hueSliderRef = useRef<HTMLCanvasElement>(null);
-
-    // --- Color Conversion Logic ---
-    const hslToHex = (h: number, s: number, l: number) => {
-        l /= 100;
-        const a = s * Math.min(l, 1 - l) / 100;
-        const f = (n: number) => {
-            const k = (n + h / 30) % 12;
-            const colorVal = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-            return Math.round(255 * colorVal).toString(16).padStart(2, '0');
-        };
-        return `#${f(0)}${f(8)}${f(4)}`;
-    };
+    const isDraggingCanvas = useRef(false);
+    const isDraggingHue = useRef(false);
+    const isInternalUpdate = useRef(false);
 
     const updateColorFromHsl = useCallback((h: number, s: number, l: number, a: number) => {
+        isInternalUpdate.current = true;
         const hex = hslToHex(h, s, l);
         if (a === 1) {
             onChange(hex);
@@ -108,114 +109,33 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
             const { r, g, b } = hexToRgba(hex);
             onChange(`rgba(${r}, ${g}, ${b}, ${a})`);
         }
+        // Reset the flag after a short delay to allow the parent to update
+        setTimeout(() => {
+            isInternalUpdate.current = false;
+        }, 0);
     }, [onChange]);
-    
-    // --- Drawing Logic ---
-    const drawColorCanvas = useCallback(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        const { width, height } = canvas;
-        ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-        ctx.fillRect(0, 0, width, height);
-        const whiteGradient = ctx.createLinearGradient(0, 0, width, 0);
-        whiteGradient.addColorStop(0, 'rgba(255,255,255,1)');
-        whiteGradient.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = whiteGradient;
-        ctx.fillRect(0, 0, width, height);
-        const blackGradient = ctx.createLinearGradient(0, 0, 0, height);
-        blackGradient.addColorStop(0, 'rgba(0,0,0,0)');
-        blackGradient.addColorStop(1, 'rgba(0,0,0,1)');
-        ctx.fillStyle = blackGradient;
-        ctx.fillRect(0, 0, width, height);
-    }, [hue]);
 
-    const drawHueSlider = useCallback(() => {
-        const canvas = hueSliderRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        const { width, height } = canvas;
-        const gradient = ctx.createLinearGradient(0, 0, 0, height);
-        for (let i = 0; i <= 360; i += 60) {
-            gradient.addColorStop(i / 360, `hsl(${i}, 100%, 50%)`);
-        }
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, width, height);
-    }, []);
+    const handleCanvasChange = useCallback((newSaturation: number, newLightness: number, isDragging: boolean) => {
+        isDraggingCanvas.current = isDragging;
+        
+        setSaturation(newSaturation);
+        setLightness(newLightness);
+        
+        // Always update the color when canvas changes
+        updateColorFromHsl(hue, newSaturation, newLightness, opacity / 100);
+    }, [hue, opacity, updateColorFromHsl]);
 
-    // --- Mouse Event Handlers ---
-    const handleCanvasMouseDown = (e: React.MouseEvent) => {
-        e.preventDefault();
-        setIsDraggingCanvas(true);
-    };
-
-    const handleHueMouseDown = (e: React.MouseEvent) => {
-        e.preventDefault();
-        setIsDraggingHue(true);
-    };
-
-    // --- BUGFIX: Global Event Listener Effect for Dragging ---
-    // This effect now correctly manages global event listeners to prevent the "snapping" bug.
-    // It uses useCallback for the handlers to ensure stable function references.
-    useEffect(() => {
-        const handleMouseMove = (e: MouseEvent) => {
-            if (isDraggingCanvas) {
-                const canvas = canvasRef.current;
-                if (!canvas) return;
-                const rect = canvas.getBoundingClientRect();
-                const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-                const y = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
-                
-                const newSaturation = (x / rect.width) * 100;
-                const newLightness = 100 - (y / rect.height) * 100;
-                
-                setSaturation(newSaturation);
-                setLightness(newLightness);
-                updateColorFromHsl(hue, newSaturation, newLightness, opacity / 100);
-            } else if (isDraggingHue) {
-                const canvas = hueSliderRef.current;
-                if (!canvas) return;
-                const rect = canvas.getBoundingClientRect();
-                const y = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
-                
-                const newHue = (y / rect.height) * 360;
-
-                setHue(newHue);
-                updateColorFromHsl(newHue, saturation, lightness, opacity / 100);
-            }
-        };
-
-        const handleMouseUp = () => {
-            setIsDraggingCanvas(false);
-            setIsDraggingHue(false);
-        };
-
-        if (isDraggingCanvas || isDraggingHue) {
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
-            document.body.style.userSelect = 'none';
-        }
-
-        return () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-            document.body.style.userSelect = '';
-        };
-    }, [isDraggingCanvas, isDraggingHue, hue, saturation, lightness, opacity, updateColorFromHsl]);
-
-
-    // --- Component Logic ---
-    const handleToggle = () => setIsOpen(!isOpen);
-    const handleClose = useCallback(() => {
-        setIsOpen(false);
-        setShowCustomPicker(false); // Also reset view on close
-    }, []);
+    const handleHueChange = useCallback((newHue: number, isDragging: boolean) => {
+        isDraggingHue.current = isDragging;
+        
+        setHue(newHue);
+        
+        // Always update the color when hue changes
+        updateColorFromHsl(newHue, saturation, lightness, opacity / 100);
+    }, [saturation, lightness, opacity, updateColorFromHsl]);
 
     const handleColorSelect = (selectedColor: string) => {
         onChange(selectedColor);
-        // When a color is selected, update the internal HSL state to match
         const rgba = rgbaStringToObject(selectedColor);
         const { h, s, l } = rgbToHsl(rgba.r, rgba.g, rgba.b);
         setHue(h);
@@ -226,7 +146,7 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
     };
     
     const addCurrentCustomColor = () => {
-        const newColor = currentColorWithOpacity; // Use the calculated current color
+        const newColor = currentColorWithOpacity;
         if (!globalCustomColors.includes(newColor) && !defaultColors.flat().includes(newColor)) {
             globalCustomColors = [...globalCustomColors, newColor];
             setCustomColors(globalCustomColors);
@@ -234,17 +154,13 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
         setShowCustomPicker(false);
     };
 
-    // --- BUGFIX: Opacity Handling ---
-    // This function now consistently uses the component's internal HSL state
-    // to calculate the new color, fixing the opacity bug.
     const handleOpacityChange = useCallback((newOpacity: number) => {
         setOpacity(newOpacity);
         updateColorFromHsl(hue, saturation, lightness, newOpacity / 100);
     }, [hue, saturation, lightness, updateColorFromHsl]);
 
-    // Initialize HSL values from the current color prop when the picker opens
     useEffect(() => {
-        if (isOpen) {
+        if (isOpen && !isInternalUpdate.current && !isDraggingCanvas.current && !isDraggingHue.current) {
             const rgba = rgbaStringToObject(color);
             const { h, s, l } = rgbToHsl(rgba.r, rgba.g, rgba.b);
             setHue(h);
@@ -254,22 +170,12 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
         }
     }, [isOpen, color]);
 
-    // Sync local custom colors with global ones when picker opens
     useEffect(() => {
         if (isOpen) {
             setCustomColors([...globalCustomColors]);
         }
     }, [isOpen]);
-    
-    // Redraw canvases when necessary
-    useEffect(() => {
-        if (isOpen && showCustomPicker) {
-            drawColorCanvas();
-            drawHueSlider();
-        }
-    }, [isOpen, showCustomPicker, hue, drawColorCanvas, drawHueSlider]);
 
-    // Handle clicking outside to close
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
@@ -278,9 +184,14 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [handleClose]);
+    }, []);
 
-    // Get current color with opacity for preview
+    const handleToggle = () => setIsOpen(!isOpen);
+    const handleClose = useCallback(() => {
+        setIsOpen(false);
+        setShowCustomPicker(false);
+    }, []);
+
     const currentColorWithOpacity = opacity === 100 
         ? hslToHex(hue, saturation, lightness) 
         : `rgba(${Object.values(hexToRgba(hslToHex(hue, saturation, lightness))).slice(0, 3).join(', ')}, ${opacity / 100})`;
@@ -297,28 +208,34 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
                     {showCustomPicker ? (
                         <div className="space-y-3">
                             <div className="flex items-center justify-between">
-                                <div className="w-8 h-8 rounded border-2 border-gray-600" style={{ backgroundColor: currentColorWithOpacity }}></div>
+                                <div 
+                                    className="w-8 h-8 rounded border-2 border-gray-600" 
+                                    style={{ backgroundColor: currentColorWithOpacity }}
+                                />
                                 <input
                                     type="text"
                                     value={currentColorWithOpacity}
                                     readOnly
                                     className="w-28 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-center text-white text-sm"
                                 />
-                                <button onClick={addCurrentCustomColor} className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-sm font-semibold">Add</button>
+                                <button 
+                                    onClick={addCurrentCustomColor} 
+                                    className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-sm font-semibold"
+                                >
+                                    Add
+                                </button>
                             </div>
                             <div className="flex gap-2">
-                                <div className="relative" 
-                                     onMouseDown={handleCanvasMouseDown}>
-                                    <canvas ref={canvasRef} width={180} height={100} className="cursor-crosshair rounded" />
-                                    <div className="absolute w-3 h-3 border-2 border-white rounded-full pointer-events-none -translate-x-1/2 -translate-y-1/2" 
-                                         style={{ left: `${saturation}%`, top: `${100 - lightness}%`, boxShadow: '0 0 0 1.5px rgba(0,0,0,0.5)' }} />
-                                </div>
-                                <div className="relative" 
-                                     onMouseDown={handleHueMouseDown}>
-                                    <canvas ref={hueSliderRef} width={18} height={100} className="cursor-pointer rounded" />
-                                    <div className="absolute w-6 h-1 bg-white pointer-events-none -translate-x-1/2 -translate-y-1/2" 
-                                         style={{ left: '50%', top: `${(hue / 360) * 100}%`, boxShadow: '0 0 0 1.5px rgba(0,0,0,0.5)' }} />
-                                </div>
+                                <ColorCanvas
+                                    hue={hue}
+                                    saturation={saturation}
+                                    lightness={lightness}
+                                    onChange={handleCanvasChange}
+                                />
+                                <HueSlider
+                                    hue={hue}
+                                    onChange={handleHueChange}
+                                />
                             </div>
                             <div>
                                 <div className="text-xs text-gray-400 mb-1">Opacity: {Math.round(opacity)}%</div>
@@ -336,14 +253,27 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
                         <div className="space-y-3">
                             <div className="grid grid-cols-10 gap-1">
                                 {defaultColors.flat().map((c) => (
-                                    <div key={c} onClick={() => handleColorSelect(c)} className="w-5 h-5 rounded-full cursor-pointer border border-gray-700" style={{ backgroundColor: c }} />
+                                    <div 
+                                        key={c} 
+                                        onClick={() => handleColorSelect(c)} 
+                                        className="w-5 h-5 rounded-full cursor-pointer border border-gray-700" 
+                                        style={{ backgroundColor: c }} 
+                                    />
                                 ))}
                             </div>
                             <div className="flex flex-wrap items-center gap-1 border-t border-gray-700 pt-2">
                                 {customColors.map((c) => (
-                                    <div key={c} onClick={() => handleColorSelect(c)} className="w-5 h-5 rounded-full cursor-pointer border border-gray-700" style={{ backgroundColor: c }} />
+                                    <div 
+                                        key={c} 
+                                        onClick={() => handleColorSelect(c)} 
+                                        className="w-5 h-5 rounded-full cursor-pointer border border-gray-700" 
+                                        style={{ backgroundColor: c }} 
+                                    />
                                 ))}
-                                <button onClick={() => setShowCustomPicker(true)} className="w-5 h-5 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600">
+                                <button 
+                                    onClick={() => setShowCustomPicker(true)} 
+                                    className="w-5 h-5 rounded-full flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+                                >
                                     <Plus size={14} />
                                 </button>
                             </div>
