@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Settings, Play } from 'lucide-react';
 import { SymbolSelect } from './components/SymbolSelect';
 import { TimeframeSelect } from './components/TimeframeSelect';
 import { ReplayControls } from './components/ReplayControls';
@@ -8,11 +9,12 @@ import { useTradingProStore } from './store/store';
 import { useDataService } from './hooks/useDataService';
 import { useReplayEngine } from './hooks/useReplayEngine';
 import type { LogicalRange, UTCTimestamp } from 'lightweight-charts';
+import { SettingsPanel } from './components/SettingsPanel'; // --- NEW: Import SettingsPanel ---
 
 const ScrollToRecentButton = ({ onClick }: { onClick: () => void }) => (
     <button
         onClick={onClick}
-        className="absolute bottom-20 right-5 z-20 bg-gray-700 bg-opacity-80 backdrop-blur-sm p-2 rounded-full text-white hover:bg-gray-600 transition-colors duration-300"
+        className="absolute bottom-5 right-5 z-20 bg-gray-700 bg-opacity-80 backdrop-blur-sm p-2 rounded-full text-white hover:bg-gray-600 transition-colors duration-300"
         title="Scroll to the most recent bar"
     >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -23,8 +25,7 @@ const ScrollToRecentButton = ({ onClick }: { onClick: () => void }) => (
 
 function App() {
     const { loadInitialDataForTimeframe, fetchMoreHistory, fetchMoreReplayHistory, fetchFullDatasetForTimeframe } = useDataService();
-    // FIX: Get the new proactive fetch function from the hook.
-    const { proactivelyFetchNextChunk, ...replayEngine } = useReplayEngine();
+    const { proactivelyFetchNextChunk, stepForward, stepBackward, ...replayEngine } = useReplayEngine();
 
     const {
         liveData,
@@ -50,12 +51,12 @@ function App() {
 
     const [isTimeframeInputOpen, setIsTimeframeInputOpen] = useState(false);
     const [timeframeInputValue, setTimeframeInputValue] = useState('');
+    // --- NEW: State for settings panel visibility ---
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-    // Track replay state changes to detect when we're exiting replay
     useEffect(() => {
         if (previousReplayStateRef.current !== 'idle' && replayState === 'idle') {
             isExitingReplayRef.current = true;
-            // Reset the flag after a brief delay to allow the data fetch to complete
             setTimeout(() => {
                 isExitingReplayRef.current = false;
             }, 100);
@@ -66,8 +67,6 @@ function App() {
     useEffect(() => {
         const controller = new AbortController();
         const fetchData = async () => {
-            // Skip data fetching if we're currently exiting replay
-            // The exitReplay function will handle loading the live data
             if (isExitingReplayRef.current) {
                 return;
             }
@@ -81,7 +80,6 @@ function App() {
                     const newIndex = newReplayData.length - 1;
                     setReplayData(newReplayData, newIndex);
                     setReplayScrollToTime(newReplayData[newIndex].time);
-                    // FIX: Immediately fetch the next chunk after a successful timeframe switch.
                     proactivelyFetchNextChunk();
                 }
             }
@@ -174,11 +172,14 @@ function App() {
     }, [setReplayScrollToTime]);
 
     const showScrollButton = !isAtLiveEdge;
-
     const shouldRescaleChart = shouldRescaleRef.current && replayState === 'idle';
+    const isReplayActive = replayState !== 'idle';
 
     return (
-        <div className='bg-gray-900 w-screen h-screen relative overflow-hidden flex flex-col'>
+        <div className='bg-gray-900 w-screen h-screen flex flex-col text-white'>
+            {/* --- NEW: Render settings panel conditionally --- */}
+            {isSettingsOpen && <SettingsPanel onClose={() => setIsSettingsOpen(false)} />}
+
             {isTimeframeInputOpen && (
                 <FastTimeframeInput
                     inputValue={timeframeInputValue}
@@ -188,35 +189,61 @@ function App() {
                 />
             )}
 
-            <header className='absolute top-4 left-4 z-20 flex items-center space-x-4'>
-                <SymbolSelect />
-                <TimeframeSelect />
+            <header className='flex-shrink-0 flex items-center justify-between h-10 px-2 border-b border-gray-700 bg-[#1e222d]'>
+                <div className="flex items-center space-x-2">
+                    <button className="w-7 h-7 bg-purple-600 rounded-full flex items-center justify-center font-bold text-sm focus:outline-none ring-2 ring-transparent focus:ring-purple-400">
+                        E
+                    </button>
+                    <SymbolSelect />
+                    <TimeframeSelect />
+                </div>
+                <div className="flex items-center space-x-2">
+                    <button onClick={replayEngine.enterReplayMode} className="flex items-center space-x-1.5 p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white text-xs">
+                        <Play size={14} />
+                        <span>Replay</span>
+                    </button>
+                    {/* --- MODIFIED: Make settings button functional --- */}
+                    <button onClick={() => setIsSettingsOpen(true)} className="p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white" title="Settings">
+                        <Settings size={16} />
+                    </button>
+                </div>
             </header>
 
-            <main className='flex-grow pt-16 relative'>
-                <ChartComponent
-                    ref={chartComponentRef}
-                    data={dataForChart}
-                    onChartClick={replayEngine.selectReplayStart}
-                    isClickArmed={replayState === 'arming'}
-                    shouldRescale={shouldRescaleChart}
-                    onVisibleLogicalRangeChange={handleVisibleLogicalRangeChange}
-                    replayScrollToTime={replayScrollToTime}
-                    onReplayScrolled={handleReplayScrolled}
-                />
+            <div className='flex flex-1 overflow-hidden'>
+                <div className='flex-shrink-0 w-12 border-r border-gray-700 bg-[#1e222d]'></div>
 
-                {showScrollButton && (
-                    <ScrollToRecentButton onClick={handleScrollToRecent} />
+                <main className='flex-1 relative'>
+                    <ChartComponent
+                        ref={chartComponentRef}
+                        data={dataForChart}
+                        onChartClick={replayEngine.selectReplayStart}
+                        isClickArmed={replayState === 'arming'}
+                        shouldRescale={shouldRescaleChart}
+                        onVisibleLogicalRangeChange={handleVisibleLogicalRangeChange}
+                        replayScrollToTime={replayScrollToTime}
+                        onReplayScrolled={handleReplayScrolled}
+                    />
+                    {showScrollButton && (
+                        <ScrollToRecentButton onClick={handleScrollToRecent} />
+                    )}
+                </main>
+
+                <div className='flex-shrink-0 w-12 border-l border-gray-700 bg-[#1e222d]'></div>
+            </div>
+
+            <footer className="flex-shrink-0">
+                {isReplayActive && (
+                    <ReplayControls
+                        startArming={replayEngine.startArming}
+                        play={replayEngine.play}
+                        pause={replayEngine.pause}
+                        exitReplay={replayEngine.exitReplay}
+                        stepForward={stepForward}
+                        stepBackward={stepBackward}
+                    />
                 )}
-            </main>
-
-            <ReplayControls
-                enterReplayMode={replayEngine.enterReplayMode}
-                startArming={replayEngine.startArming}
-                play={replayEngine.play}
-                pause={replayEngine.pause}
-                exitReplay={replayEngine.exitReplay}
-            />
+                <div className='h-8 border-t border-gray-700 bg-[#1e222d]'></div>
+            </footer>
         </div>
     );
 }

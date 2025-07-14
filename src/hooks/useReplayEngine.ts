@@ -25,7 +25,6 @@ export const useReplayEngine = () => {
 
         const { replayData, timeframe: currentTf } = useTradingProStore.getState();
         const lastCandle = replayData[replayData.length - 1];
-        
         if (!lastCandle) return;
 
         isFetchingFuture.current = true;
@@ -92,9 +91,6 @@ export const useReplayEngine = () => {
         const currentGlobalTimeframe = useTradingProStore.getState().timeframe;
 
         if (useTradingProStore.getState().replayState === 'arming') {
-            // By removing the state change to 'standby', we prevent the chart from
-            // flashing live data. The UI remains in the 'arming' state (e.g., cursor change)
-            // until the data is fetched and ready.
             const fullData = await fetchFullDatasetForTimeframe(currentGlobalTimeframe);
             if (!fullData || fullData.length === 0) {
                 console.error("Failed to fetch data for replay start.");
@@ -102,10 +98,10 @@ export const useReplayEngine = () => {
                 return;
             }
             const startIndex = fullData.findIndex(d => d.time === time);
+
             if (startIndex !== -1) {
                 const anchor = { time, timeframe: currentGlobalTimeframe };
                 loadReplayData(fullData, startIndex, anchor);
-                // The state transitions directly to 'paused' once data is loaded.
                 setReplayState('paused');
                 setReplayScrollToTime(time);
                 proactivelyFetchNextChunk();
@@ -129,20 +125,22 @@ export const useReplayEngine = () => {
     }, [setReplayState]);
 
     const exitReplay = useCallback(async () => {
-        // Get the current timeframe before clearing replay data
-        const currentTimeframe = useTradingProStore.getState().timeframe;
-        
-        // Clear replay data and set state to idle
-        setReplayState('idle');
-        loadReplayData([], -1, null);
-        
-        // Immediately load the live data for the current timeframe
-        // This prevents the flash by ensuring data is available right away
         try {
+            // Get the current timeframe before clearing replay data
+            const currentTimeframe = useTradingProStore.getState().timeframe;
+            
+            // Load the new data first
             const controller = new AbortController();
             await loadInitialDataForTimeframe(currentTimeframe, controller.signal);
+            
+            // Only after new data is loaded, clear replay state
+            setReplayState('idle');
+            loadReplayData([], -1, null);
         } catch (error) {
             console.error("Failed to load live data after exiting replay:", error);
+            // On error, still exit replay mode to prevent getting stuck
+            setReplayState('idle');
+            loadReplayData([], -1, null);
         }
     }, [setReplayState, loadReplayData, loadInitialDataForTimeframe]);
 

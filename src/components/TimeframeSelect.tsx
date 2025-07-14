@@ -98,7 +98,7 @@ export const TimeframeSelect = () => {
             <div className="flex items-center bg-gray-900 bg-opacity-50 rounded-md" ref={dropdownRef}>
                 <div className="flex items-center border-r border-gray-700">
                     {displayTimeframes.map(tf => (
-                        <button key={tf} onClick={() => handleSelect(tf)} className={`px-3 py-2 text-sm transition-colors duration-200 ${selectedTimeframe === tf ? 'text-blue-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
+                        <button key={tf} onClick={() => handleSelect(tf)} className={`px-2 py-1 text-xs transition-colors duration-200 ${selectedTimeframe === tf ? 'text-blue-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
                             {displayTfLabel(tf)}
                         </button>
                     ))}

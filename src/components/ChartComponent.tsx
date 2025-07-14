@@ -5,6 +5,7 @@ import {
     type CandlestickSeriesPartialOptions,
 } from 'lightweight-charts';
 import React, { useEffect, useImperativeHandle, useRef, useState, memo } from 'react';
+import { useTradingProStore } from '../store/store';
 
 interface ChartComponentProps {
     data: CandlestickData<UTCTimestamp>[];
@@ -22,8 +23,6 @@ export type ChartHandle = {
 };
 
 const chartOptions = {
-    layout: { background: { type: ColorType.Solid, color: '#111827' }, textColor: '#d1d5db' },
-    grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
     timeScale: { 
         timeVisible: true, 
         secondsVisible: false, 
@@ -31,27 +30,18 @@ const chartOptions = {
         rightBarStaysOnScroll: false,
         fixRightEdge: false,
     },
-    handleScroll: {
-        horzDrag: true,
-        mouseWheel: true,
-        pressedMouseMove: true,
-    },
-    handleScale: {
-        axisPressedMouseMove: true,
-        mouseWheel: true,
-        pinch: true,
-    },
+    handleScroll: { horzDrag: true, mouseWheel: true, pressedMouseMove: true },
+    handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
     crosshair: { 
         mode: CrosshairMode.Normal,
         horzLine: { labelVisible: true, labelBackgroundColor: '#374151' },
         vertLine: { labelVisible: false }
     },
+    autoSize: true,
 };
 
-const seriesOptions: CandlestickSeriesPartialOptions = {
-    upColor: '#22c55e', downColor: '#ef4444', borderDownColor: '#ef4444',
-    borderUpColor: '#22c55e', wickDownColor: '#ef4444', wickUpColor: '#22c55e',
-};
+// This is no longer a constant, it will be derived from the store.
+// const seriesOptions: CandlestickSeriesPartialOptions = { ... };
 
 const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
     ({ data, onVisibleLogicalRangeChange, onChartClick, isClickArmed, shouldRescale, replayScrollToTime, onReplayScrolled }, ref) => {
@@ -59,6 +49,10 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
         const chartRef = useRef<IChartApi | null>(null);
         const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
         const [tooltip, setTooltip] = useState<{ visible: boolean, x: number, y: number, content: string }>({ visible: false, x: 0, y: 0, content: '' });
+
+        const chartAppearance = useTradingProStore((state) => state.chartAppearance);
+        // --- NEW: Get candlestick colors from the store ---
+        const candlestickColors = useTradingProStore((state) => state.candlestickColors);
 
         useImperativeHandle(ref, () => ({
             scrollToRealtime: () => chartRef.current?.timeScale().scrollToRealTime(),
@@ -74,18 +68,47 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
 
         useEffect(() => {
             if (!chartContainerRef.current) return;
-            const chart = createChart(chartContainerRef.current, { ...chartOptions, width: chartContainerRef.current.clientWidth, height: chartContainerRef.current.clientHeight });
+            const chart = createChart(chartContainerRef.current, {
+                ...chartOptions,
+                layout: {
+                    background: { type: ColorType.Solid, color: chartAppearance.background },
+                    textColor: '#d1d5db'
+                },
+                grid: {
+                    vertLines: { color: chartAppearance.vertGridColor },
+                    horzLines: { color: chartAppearance.horzGridColor },
+                }
+            });
             chartRef.current = chart;
-            const series = chart.addSeries(CandlestickSeries, seriesOptions);
+            // --- MODIFIED: Use initial candlestick colors from the store ---
+            const series = chart.addSeries(CandlestickSeries, candlestickColors);
             seriesRef.current = series;
             
-            const handleResize = () => chart.resize(chartContainerRef.current!.clientWidth, chartContainerRef.current!.clientHeight);
-            window.addEventListener('resize', handleResize);
             return () => {
-                window.removeEventListener('resize', handleResize);
                 chart.remove();
             };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         }, []);
+
+        useEffect(() => {
+            if (!chartRef.current) return;
+            chartRef.current.applyOptions({
+                layout: {
+                    background: { type: ColorType.Solid, color: chartAppearance.background },
+                },
+                grid: {
+                    vertLines: { color: chartAppearance.vertGridColor },
+                    horzLines: { color: chartAppearance.horzGridColor },
+                }
+            });
+        }, [chartAppearance]);
+
+        // --- NEW: Add a useEffect to apply candlestick color changes ---
+        useEffect(() => {
+            if (!seriesRef.current) return;
+            seriesRef.current.applyOptions(candlestickColors);
+        }, [candlestickColors]);
+
 
         useEffect(() => {
             const chart = chartRef.current;

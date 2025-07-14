@@ -1,66 +1,63 @@
 import { useTradingProStore } from '../store/store';
+import { Play, Pause, Rewind, SkipBack, SkipForward, X } from 'lucide-react';
 
-// THE FIX: Define the props that will be passed down from App.tsx
 interface ReplayControlsProps {
-    enterReplayMode: () => void;
     startArming: () => void;
     play: () => void;
     pause: () => void;
     exitReplay: () => void;
+    stepForward: () => void;
+    stepBackward: () => void;
 }
 
-const RewindIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z" /></svg>;
-const StepBackwardIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>;
-const PlayIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /></svg>;
-const PauseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6" /></svg>;
-const StepForwardIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>;
-const ExitIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
-
-export const ReplayControls = ({ enterReplayMode, startArming, play, pause, exitReplay }: ReplayControlsProps) => {
+export const ReplayControls = ({ startArming, play, pause, exitReplay, stepForward, stepBackward }: ReplayControlsProps) => {
     const replayState = useTradingProStore((state) => state.replayState);
     const replaySpeed = useTradingProStore((state) => state.replaySpeed);
     const setReplaySpeed = useTradingProStore((state) => state.setReplaySpeed);
-    const stepReplayForward = useTradingProStore((state) => state.stepReplayForward);
-    const stepReplayBackward = useTradingProStore((state) => state.stepReplayBackward);
 
-    if (replayState === 'idle') {
-        return (
-            <div className="absolute top-4 right-4 z-20">
-                <button onClick={enterReplayMode} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors duration-300">
-                    Replay
-                </button>
-            </div>
-        );
-    }
+    const isPlaying = replayState === 'active';
 
     return (
-        <>
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-gray-800 bg-opacity-80 backdrop-blur-sm p-2 rounded-lg shadow-lg flex items-center space-x-2">
-                <button onClick={startArming} title="Select Replay Start Point" className={`p-2 rounded-md text-sm transition-colors duration-300 ${replayState === 'arming' ? 'bg-yellow-500 text-white animate-pulse' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
-                    <RewindIcon />
+        <div className="bg-[#1e222d] border-t border-b border-gray-700 px-4 h-10 flex items-center relative text-white">
+            
+            {/* Centered Navigation Controls */}
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center space-x-2">
+                <button 
+                    onClick={startArming} 
+                    title="Select Replay Start Point" 
+                    className={`flex items-center space-x-2 px-2 py-1 rounded-md text-xs transition-colors duration-300 ${replayState === 'arming' ? 'bg-yellow-500 text-white animate-pulse' : 'bg-gray-700 hover:bg-gray-600'}`}
+                >
+                    <Rewind size={14} />
+                    <span>Select bar</span>
                 </button>
-                <button onClick={stepReplayBackward} title="Step Backward" className="bg-gray-700 hover:bg-gray-600 text-white font-bold p-2 rounded-md text-sm transition-colors duration-300">
-                    <StepBackwardIcon />
+                <button onClick={stepBackward} title="Step Backward" className="p-1.5 rounded-md bg-gray-700 hover:bg-gray-600 transition-colors">
+                    <SkipBack size={16} />
                 </button>
-                <button onClick={replayState === 'active' ? pause : play} className="bg-blue-600 hover:bg-blue-700 text-white font-bold p-2 rounded-md text-sm transition-colors duration-300 w-10 h-10 flex items-center justify-center">
-                    {replayState === 'active' ? <PauseIcon /> : <PlayIcon />}
+                <button onClick={isPlaying ? pause : play} className="p-1.5 rounded-md bg-blue-600 hover:bg-blue-700 transition-colors">
+                    {isPlaying ? <Pause size={16} /> : <Play size={16} />}
                 </button>
-                <button onClick={stepReplayForward} title="Step Forward" className="bg-gray-700 hover:bg-gray-600 text-white font-bold p-2 rounded-md text-sm transition-colors duration-300">
-                    <StepForwardIcon />
+                <button onClick={stepForward} title="Step Forward" className="p-1.5 rounded-md bg-gray-700 hover:bg-gray-600 transition-colors">
+                    <SkipForward size={16} />
                 </button>
-                <select value={replaySpeed} onChange={e => setReplaySpeed(Number(e.target.value))} className="bg-gray-700 text-white rounded-md p-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select 
+                    value={replaySpeed} 
+                    onChange={e => setReplaySpeed(Number(e.target.value))} 
+                    className="bg-gray-700 text-white rounded-md p-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
                     {[10, 7, 5, 3, 1, 0.5, 0.2, 0.1].map(speed => (
                         <option key={speed} value={speed}>{speed}x</option>
                     ))}
                 </select>
-                <button onClick={exitReplay} title="Exit Replay Mode" className="bg-red-600 hover:bg-red-700 text-white font-bold p-2 rounded-md text-sm transition-colors duration-300">
-                    <ExitIcon />
+            </div>
+
+            {/* Right Side: Trading Actions & Exit */}
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center space-x-2">
+                <button className="bg-red-600 hover:bg-red-700 text-white font-semibold py-1 px-4 text-xs rounded-md transition-colors">Sell</button>
+                <button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1 px-4 text-xs rounded-md transition-colors">Buy</button>
+                 <button onClick={exitReplay} title="Exit Replay Mode" className="p-1.5 rounded-md bg-gray-700 hover:bg-gray-600 transition-colors">
+                    <X size={16} />
                 </button>
             </div>
-            <div className="absolute bottom-4 right-4 z-20 flex items-center space-x-2">
-                <button className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-6 rounded-md transition-colors duration-300">Sell</button>
-                <button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-md transition-colors duration-300">Buy</button>
-            </div>
-        </>
+        </div>
     );
 };

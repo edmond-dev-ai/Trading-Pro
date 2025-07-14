@@ -32,8 +32,7 @@ export const SymbolSelect = () => {
     <div className="relative" ref={dropdownRef}>
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        className="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-1 px-3 rounded-md text-sm transition-colors duration-300"
-      >
+className="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-1 px-2 rounded-md text-xs transition-colors duration-300"      >
         {selectedSymbol}
       </button>
 

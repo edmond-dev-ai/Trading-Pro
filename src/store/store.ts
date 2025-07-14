@@ -8,6 +8,22 @@ export interface ReplayAnchor {
   timeframe: string;
 }
 
+export interface ChartAppearanceSettings {
+  background: string;
+  vertGridColor: string;
+  horzGridColor: string;
+}
+
+// --- NEW: Define a type for candlestick color settings ---
+export interface CandlestickColorSettings {
+    upColor: string;
+    downColor: string;
+    borderUpColor: string;
+    borderDownColor: string;
+    wickUpColor: string;
+    wickDownColor: string;
+}
+
 export interface TradingProState {
   symbol: string;
   timeframe: string;
@@ -22,6 +38,9 @@ export interface TradingProState {
   replaySpeed: number;
   replayScrollToTime: UTCTimestamp | null;
   replayAnchor: ReplayAnchor | null;
+  chartAppearance: ChartAppearanceSettings;
+  // --- NEW: Add candlestick color state ---
+  candlestickColors: CandlestickColorSettings;
 
   // Actions
   setSymbol: (symbol: string) => void;
@@ -42,7 +61,10 @@ export interface TradingProState {
   setReplaySpeed: (speed: number) => void;
   setReplayScrollToTime: (time: UTCTimestamp | null) => void;
   setReplayAnchor: (anchor: ReplayAnchor | null) => void;
-  appendReplayData: (futureData: AppData[]) => void; // FIX: Add new action
+  appendReplayData: (futureData: AppData[]) => void;
+  setChartAppearance: (newAppearance: Partial<ChartAppearanceSettings>) => void;
+  // --- NEW: Add action for candlestick colors ---
+  setCandlestickColors: (newColors: Partial<CandlestickColorSettings>) => void;
 }
 
 export const timeframeToMinutes = (tf: string): number => {
@@ -76,6 +98,20 @@ export const useTradingProStore = create<TradingProState>((set, get) => ({
   replaySpeed: 1,
   replayScrollToTime: null,
   replayAnchor: null,
+  chartAppearance: {
+    background: '#111827',
+    vertGridColor: '#374151',
+    horzGridColor: '#374151',
+  },
+  // --- NEW: Add initial values for candlestick colors ---
+  candlestickColors: {
+    upColor: '#22c55e',
+    downColor: '#ef4444',
+    borderUpColor: '#22c55e',
+    borderDownColor: '#ef4444',
+    wickUpColor: '#22c55e',
+    wickDownColor: '#ef4444',
+  },
   setSymbol: (symbol) => set({ symbol, liveData: [], hasMoreHistory: true, isAtLiveEdge: true }),
   setTimeframe: (timeframe) => set({ timeframe }),
   toggleFavorite: (tf) => set((state) => {
@@ -118,7 +154,6 @@ export const useTradingProStore = create<TradingProState>((set, get) => ({
   }),
   stepReplayForward: () => {
     const { replayCurrentIndex, replayData, timeframe } = get();
-    // This function can now be simpler. The engine handles fetching more data.
     if (replayCurrentIndex < replayData.length - 1) {
         const newIndex = replayCurrentIndex + 1;
         const newCandle = replayData[newIndex];
@@ -144,8 +179,14 @@ export const useTradingProStore = create<TradingProState>((set, get) => ({
   setReplaySpeed: (speed) => set({ replaySpeed: speed }),
   setReplayScrollToTime: (time) => set({ replayScrollToTime: time }),
   setReplayAnchor: (anchor) => set({ replayAnchor: anchor }),
-  // FIX: Implement the new action
   appendReplayData: (futureData) => set((state) => ({
     replayData: [...state.replayData, ...futureData]
+  })),
+  setChartAppearance: (newAppearance) => set((state) => ({
+    chartAppearance: { ...state.chartAppearance, ...newAppearance },
+  })),
+  // --- NEW: Add the setter action for candlestick colors ---
+  setCandlestickColors: (newColors) => set((state) => ({
+    candlestickColors: { ...state.candlestickColors, ...newColors },
   })),
 }));
