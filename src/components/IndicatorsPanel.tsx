@@ -23,36 +23,43 @@ const ComingSoon = () => (
 
 export const IndicatorsPanel = ({ onClose }: IndicatorsPanelProps) => {
     const [activeTab, setActiveTab] = useState('Technicals');
-    const { addIndicator } = useTradingProStore();
+    const { liveData, replayData, replayState, replayCurrentIndex } = useTradingProStore();
 
-    const handleAddSma = () => {
-        const newIndicator = {
-            id: 'SMA_20',
-            name: 'Moving Average',
-            options: { length: 20 },
-        };
-        
-        // Add to state
-        addIndicator(newIndicator);
+    // --- NEW: Generic function to request an indicator from the backend ---
+    const requestIndicator = (indicatorName: string, options: Record<string, any>) => {
+        // Determine which dataset to use (live vs. replay)
+        const isReplay = replayState !== 'idle';
+        const chartData = liveData;
 
-        // Send request to backend
+        if (chartData.length === 0) {
+            console.warn("No chart data available to calculate indicator.");
+            return;
+        }
+
+        // Create a unique ID for this indicator instance
+        const indicatorId = `${indicatorName.toUpperCase()}_${Object.values(options).join('_')}`;
+
+        // Send the request to the backend
         webSocketService.sendMessage({
-            action: 'add_indicator',
+            action: 'get_indicator',
             params: {
-                name: 'sma',
-                length: 20
-            }
+                id: indicatorId,
+                name: indicatorName,
+                ...options
+            },
+            // Send the current chart data for calculation
+            data: chartData 
         });
-        
-        onClose(); // Close panel after adding
+
+        onClose(); // Close panel after requesting
     };
 
     const indicators = [
-        { name: 'Moving Average', description: 'A standard moving average', action: handleAddSma },
-        { name: 'Exponential Moving Average', description: 'An exponential moving average', action: () => {} },
+        { name: 'Moving Average', description: 'A standard moving average', action: () => requestIndicator('sma', { length: 20 }) },
+        { name: 'Exponential Moving Average', description: 'An exponential moving average', action: () => requestIndicator('ema', { length: 20 }) },
         { name: 'RSI', description: 'Relative Strength Index', action: () => {} },
         { name: 'MACD', description: 'Moving Average Convergence Divergence', action: () => {} },
-        { name: 'Bollinger Bands', description: 'Volatility bands placing two standard deviations away.', action: () => {} },
+        { name: 'Bollinger Bands', description: 'Volatility bands placing two standard deviations away.', action: () => requestIndicator('bbands', { length: 20, std: 2 }) },
         { name: 'Volume', description: 'The amount of an asset or security that changed hands over some period of time.', action: () => {} }
     ];
 

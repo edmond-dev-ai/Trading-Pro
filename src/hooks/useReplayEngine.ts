@@ -2,12 +2,12 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useTradingProStore } from '../store/store';
 import { useDataService } from './useDataService';
 import type { UTCTimestamp } from 'lightweight-charts';
+import { recalculateIndicators } from './useWebSocketService'; // Import the recalculateIndicators function
 
 export const useReplayEngine = () => {
     const {
         replayState,
         replaySpeed,
-        timeframe,
         setReplayState,
         stepReplayForward,
         stepReplayBackward,
@@ -35,6 +35,9 @@ export const useReplayEngine = () => {
                 const cleanedData = futureData.filter(d => d.time > lastTime);
                 if (cleanedData.length > 0) {
                     appendReplayData(cleanedData);
+                    // After appending new data, pre-calculate indicators for the full replay dataset
+                    const updatedReplayData = useTradingProStore.getState().replayData;
+                    recalculateIndicators(updatedReplayData);
                 }
             }
         } catch (error) {
@@ -105,6 +108,9 @@ export const useReplayEngine = () => {
                 setReplayState('paused');
                 setReplayScrollToTime(time);
                 proactivelyFetchNextChunk();
+
+                // Pre-calculate indicators for the full initial dataset
+                recalculateIndicators(fullData);
             } else {
                 console.error("Could not find selected start time in the fetched data.");
                 setReplayState('idle');
@@ -126,19 +132,16 @@ export const useReplayEngine = () => {
 
     const exitReplay = useCallback(async () => {
         try {
-            // Get the current timeframe before clearing replay data
             const currentTimeframe = useTradingProStore.getState().timeframe;
             
-            // Load the new data first
-            const controller = new AbortController();
-            await loadInitialDataForTimeframe(currentTimeframe, controller.signal);
+            // Await the data loading before changing state
+            await loadInitialDataForTimeframe(currentTimeframe);
             
-            // Only after new data is loaded, clear replay state
+            // Now clear the replay state
             setReplayState('idle');
             loadReplayData([], -1, null);
         } catch (error) {
             console.error("Failed to load live data after exiting replay:", error);
-            // On error, still exit replay mode to prevent getting stuck
             setReplayState('idle');
             loadReplayData([], -1, null);
         }

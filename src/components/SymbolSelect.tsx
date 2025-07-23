@@ -10,8 +10,10 @@ export const SymbolSelect = () => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // A list of available symbols. This could also come from the store or an API.
-  const symbols = ["XAUUSD", "EURUSD", "GBPUSD", "AUDCAD", "USDJPY"];
+  // ========================================================================
+  // MODIFICATION 1: Added "BTCUSDT" to the list of symbols.
+  // ========================================================================
+  const symbols = ["XAUUSD", "EURUSD", "GBPUSD", "AUDCAD", "USDJPY", "BTCUSDT"];
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -32,7 +34,8 @@ export const SymbolSelect = () => {
     <div className="relative" ref={dropdownRef}>
       <button 
         onClick={() => setIsOpen(!isOpen)}
-className="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-1 px-2 rounded-md text-xs transition-colors duration-300"      >
+        className="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-1 px-2 rounded-md text-xs transition-colors duration-300"
+      >
         {selectedSymbol}
       </button>
 
@@ -43,14 +46,16 @@ className="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-1 px-2 roun
               <li key={symbol}>
                 <button
                   onClick={() => handleSelect(symbol)}
-                  // The logic to disable non-XAUUSD symbols is temporary for development
-                  disabled={symbol !== "XAUUSD"}
+                  // ========================================================================
+                  // MODIFICATION 2: Updated the disabled logic to allow both XAUUSD and BTCUSDT.
+                  // ========================================================================
+                  disabled={!["XAUUSD", "BTCUSDT"].includes(symbol)}
                   className={`w-full text-left px-3 py-2 text-sm rounded-md ${
                     symbol === selectedSymbol 
                       ? 'bg-blue-600 text-white' 
                       : 'text-gray-300 hover:bg-gray-700'
                   } ${
-                    symbol !== "XAUUSD" ? 'opacity-50 cursor-not-allowed' : ''
+                    !["XAUUSD", "BTCUSDT"].includes(symbol) ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
                 >
                   {symbol}
