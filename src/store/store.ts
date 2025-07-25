@@ -1,5 +1,22 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { CandlestickData, UTCTimestamp, LineData } from 'lightweight-charts';
+
+// --- NEW: Drawing-related types ---
+export interface DrawingPoint {
+  time: UTCTimestamp;
+  price: number;
+}
+export interface TrendlineDrawing {
+  id: string;
+  type: 'trendline';
+  points: [DrawingPoint, DrawingPoint];
+  // Future properties: color, width, etc.
+}
+export type Drawing = TrendlineDrawing; // Add other drawing types here with | in the future
+export type DrawingTool = 'trendline' | null;
+// --- END NEW ---
+
 
 export type AppData = Omit<CandlestickData<UTCTimestamp>, 'time'> & { time: UTCTimestamp };
 export type ReplayState = 'idle' | 'standby' | 'arming' | 'active' | 'paused';
@@ -8,12 +25,13 @@ export interface ReplayAnchor {
   timeframe: string;
 }
 
-// --- NEW: Type for a single active indicator ---
 export interface Indicator {
-    id: string; // e.g., 'SMA_20'
-    name: string; // e.g., 'Moving Average'
+    id: string; 
+    name: string;
     data: LineData<UTCTimestamp>[];
-    options: Record<string, any>; // e.g., { color: '#ff0000', length: 20 }
+    options: Record<string, any>;
+    color?: string;
+    isVisible?: boolean;
 }
 
 export interface ChartAppearanceSettings {
@@ -45,11 +63,17 @@ export interface TradingProState {
   replaySpeed: number;
   replayScrollToTime: UTCTimestamp | null;
   replayAnchor: ReplayAnchor | null;
+  isChangingTimeframe: boolean;
   isIndicatorsPanelOpen: boolean;
   chartAppearance: ChartAppearanceSettings;
   candlestickColors: CandlestickColorSettings;
-  activeIndicators: Indicator[]; // --- NEW: State to hold active indicators
-  isChangingTimeframe: boolean;
+  activeIndicators: Indicator[];
+  indicatorToEdit: Indicator[] | null;
+
+  // --- NEW: Drawing state ---
+  activeDrawingTool: DrawingTool;
+  drawings: Drawing[];
+
   // Actions
   setSymbol: (symbol: string) => void;
   setTimeframe: (timeframe: string) => void;
@@ -73,10 +97,20 @@ export interface TradingProState {
   appendReplayData: (futureData: AppData[]) => void;
   setChartAppearance: (newAppearance: Partial<ChartAppearanceSettings>) => void;
   setCandlestickColors: (newColors: Partial<CandlestickColorSettings>) => void;
-  addIndicator: (indicator: Indicator) => void; // --- NEW ---
-  removeIndicator: (id: string) => void; // --- NEW ---
-  clearIndicators: () => void; // --- NEW ---
-  setState: (partial: Partial<TradingProState>) => void; // Add this for internal state updates
+  addIndicator: (indicator: Indicator) => void;
+  removeIndicator: (id: string) => void;
+  clearIndicators: () => void;
+  setIndicatorToEdit: (indicatorGroup: Indicator[] | null) => void;
+  setState: (partial: Partial<TradingProState>) => void;
+  removeIndicatorsByIds: (ids: string[]) => void;
+  toggleIndicatorVisibility: (ids: string[]) => void;
+  updateIndicatorStyle: (id: string, newStyle: Partial<Pick<Indicator, 'color'>>) => void;
+
+  // --- NEW: Drawing actions ---
+  setActiveDrawingTool: (tool: DrawingTool) => void;
+  addDrawing: (drawing: Drawing) => void;
+  removeDrawing: (id: string) => void;
+  clearDrawings: () => void;
 }
 
 export const timeframeToMinutes = (tf: string): number => {
@@ -96,7 +130,7 @@ export const timeframeToMinutes = (tf: string): number => {
     }
 }
 
-export const useTradingProStore = create<TradingProState>((set, get) => ({
+export const useTradingProStore = create<TradingProState>()(persist((set, get) => ({
   symbol: 'XAUUSD',
   timeframe: '1H',
   favoriteTimeframes: ['1m', '5m', '15m', '1H', '4H', '1D'],
@@ -110,8 +144,10 @@ export const useTradingProStore = create<TradingProState>((set, get) => ({
   replaySpeed: 1,
   replayScrollToTime: null,
   replayAnchor: null,
+  isChangingTimeframe: false,
   isIndicatorsPanelOpen: false,
-  activeIndicators: [], // --- NEW: Initial state ---
+  activeIndicators: [],
+  indicatorToEdit: null,
   chartAppearance: {
     background: '#111827',
     vertGridColor: '#374151',
@@ -125,26 +161,28 @@ export const useTradingProStore = create<TradingProState>((set, get) => ({
     wickUpColor: '#22c55e',
     wickDownColor: '#ef4444',
   },
-  isChangingTimeframe: false,
-  // --- MODIFIED: setSymbol now clears indicators ---
-  setSymbol: (symbol) => set({ symbol, liveData: [], hasMoreHistory: true, isAtLiveEdge: true, activeIndicators: [] }),
-  // --- FIXED: setTimeframe now properly handles replay data ---
-  setTimeframe: (timeframe) => {
-  const state = get();
   
-  set({ 
-    timeframe, 
-    isChangingTimeframe: true,
-    // Clear live data to prevent flashing
+  // --- NEW: Initial state for drawings ---
+  activeDrawingTool: null,
+  drawings: [],
+
+  setSymbol: (symbol) => set((state) => ({
+    symbol,
     liveData: [],
-    // DON'T clear replay data - let the data fetching logic handle it
-    // Clear indicator data to prevent flashing old data
-    activeIndicators: state.activeIndicators.map(indicator => ({
-      ...indicator,
-      data: [] 
-    }))
-  });
-},
+    hasMoreHistory: true,
+    isAtLiveEdge: true,
+    activeIndicators: state.activeIndicators.map(indicator => ({ ...indicator, data: [] })),
+    drawings: [], // Clear drawings on symbol change
+  })),
+  setTimeframe: (timeframe) => {
+    const state = get();
+    set({ 
+      timeframe, 
+      isChangingTimeframe: true,
+      liveData: [],
+      activeIndicators: state.activeIndicators.map(indicator => ({ ...indicator, data: [] })),
+    });
+  },
   toggleFavorite: (tf) => set((state) => {
       const newFavorites = state.favoriteTimeframes.includes(tf)
           ? state.favoriteTimeframes.filter(fav => fav !== tf)
@@ -220,14 +258,61 @@ export const useTradingProStore = create<TradingProState>((set, get) => ({
   setCandlestickColors: (newColors) => set((state) => ({
     candlestickColors: { ...state.candlestickColors, ...newColors },
   })),
-  // --- NEW: Indicator action implementations ---
-  addIndicator: (indicator) => set((state) => ({
-    activeIndicators: [...state.activeIndicators.filter(i => i.id !== indicator.id), indicator]
-  })),
+  addIndicator: (indicator) => set((state) => {
+    const indicatorBaseName = indicator.name.split('_')[0].toUpperCase();
+    const otherIndicators = state.activeIndicators.filter(i => {
+        const iBaseName = i.name.split('_')[0].toUpperCase();
+        return iBaseName !== indicatorBaseName;
+    });
+    const color = indicator.options?.color ?? '#2563eb';
+    const isVisible = indicator.options?.isVisible ?? true;
+    return { activeIndicators: [ ...otherIndicators, { ...indicator, color, isVisible }] };
+  }),
   removeIndicator: (id) => set((state) => ({
     activeIndicators: state.activeIndicators.filter(i => i.id !== id)
   })),
   clearIndicators: () => set({ activeIndicators: [] }),
-  // Add setState method for internal use
+  setIndicatorToEdit: (indicatorGroup) => set({ indicatorToEdit: indicatorGroup }),
   setState: (partial) => set(partial),
+  removeIndicatorsByIds: (ids) => set((state) => ({
+    activeIndicators: state.activeIndicators.filter(i => !ids.includes(i.id))
+  })),
+  toggleIndicatorVisibility: (ids) => set((state) => ({
+    activeIndicators: state.activeIndicators.map(indicator =>
+      ids.includes(indicator.id) ? { ...indicator, isVisible: !indicator.isVisible } : indicator
+    )
+  })),
+  updateIndicatorStyle: (id, newStyle) => set((state) => ({
+    activeIndicators: state.activeIndicators.map(indicator =>
+      indicator.id === id ? { ...indicator, ...newStyle } : indicator
+    )
+  })),
+
+  // --- NEW: Drawing action implementations ---
+  setActiveDrawingTool: (tool) => set({ activeDrawingTool: tool }),
+  addDrawing: (drawing) => set((state) => ({ drawings: [...state.drawings, drawing] })),
+  removeDrawing: (id) => set((state) => ({ drawings: state.drawings.filter(d => d.id !== id) })),
+  clearDrawings: () => set({ drawings: [] }),
+
+}), {
+  name: 'trading-pro-store',
+  version: 2, // Bump version due to new persisted state
+  partialize: (state) => ({
+    activeIndicators: state.activeIndicators,
+    favoriteTimeframes: state.favoriteTimeframes,
+    customTimeframes: state.customTimeframes,
+    candlestickColors: state.candlestickColors,
+    chartAppearance: state.chartAppearance,
+    drawings: state.drawings, // --- NEW: Persist drawings ---
+  }),
+  // Reset replay state on load
+  onRehydrateStorage: () => (state, error) => {
+    if (state) {
+        state.setReplayState('idle');
+        state.loadReplayData([], -1, null);
+    }
+  }
 }));
+
+// Manual call to reset replay state on initial load
+useTradingProStore.getState().setReplayState('idle');

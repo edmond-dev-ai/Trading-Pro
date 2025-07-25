@@ -131,16 +131,26 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
 
             activeIndicators.forEach(indicator => {
                 let series = indicatorSeriesRef.current.get(indicator.id);
+                const isVisible = indicator.isVisible ?? true;
                 if (!series) {
-                    // --- FIX: Remove priceScaleId to use main price scale ---
                     series = chart.addSeries(LineSeries, {
-                        color: indicator.options.color || '#2563eb',
-                        lineWidth: 2,
+                        color: indicator.color || '#2563eb', // Use indicator.color if available
+                        lineWidth: 1,
                         lastValueVisible: false,
                         priceLineVisible: false,
-                        // Removed: priceScaleId: '' - this was causing separate scale
+                        visible: isVisible,
+                        crosshairMarkerVisible: false,
                     });
                     indicatorSeriesRef.current.set(indicator.id, series);
+                } else {
+                    // Check if visibility has changed
+                    if (series.options().visible !== isVisible) {
+                        series.applyOptions({ visible: isVisible });
+                    }
+                    // Check if color has changed
+                    if (series.options().color !== indicator.color) {
+                        series.applyOptions({ color: indicator.color || '#2563eb' });
+                    }
                 }
 
                 if (series) {
@@ -227,7 +237,18 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
             if (!chart || !activeIndicators.length) return;
 
             if (replayState !== 'idle') {
-                const lastVisibleCandleIndex = data.length -1;
+                // --- FIX: Add a guard clause to prevent crash when data is empty ---
+                if (data.length === 0) {
+                    // Clear indicator series if there's no main data
+                    activeIndicators.forEach(indicator => {
+                        const series = indicatorSeriesRef.current.get(indicator.id);
+                        if (series) {
+                            series.setData([]);
+                        }
+                    });
+                    return;
+                }
+                const lastVisibleCandleIndex = data.length - 1;
                 const lastVisibleTimestamp = data[lastVisibleCandleIndex].time;
 
                 activeIndicators.forEach(indicator => {
@@ -263,4 +284,3 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
 );
 
 export const ChartComponent = memo(ChartComponentImpl);
-

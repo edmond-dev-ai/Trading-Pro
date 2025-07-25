@@ -23,7 +23,7 @@ const groupIndicators = (indicators: Indicator[]): Map<string, Indicator[]> => {
 };
 
 export const IndicatorStatus = () => {
-    const { activeIndicators, removeIndicator } = useTradingProStore();
+    const { activeIndicators, removeIndicator, setIndicatorToEdit, toggleIndicatorVisibility } = useTradingProStore();
     const grouped = groupIndicators(activeIndicators);
 
     if (activeIndicators.length === 0) return null;
@@ -48,12 +48,17 @@ export const IndicatorStatus = () => {
             {Array.from(grouped.entries()).map(([baseId, group]) => (
                 <div key={baseId} className="flex items-center space-x-2 p-1 rounded-md bg-gray-900 bg-opacity-50 hover:bg-opacity-75 transition-colors">
                     <span className="font-mono pl-1">{getDisplayName(group)}</span>
-                    <button className="hover:text-blue-400" title="Toggle Visibility"><Eye size={14} /></button>
-                    <button className="hover:text-blue-400" title="Settings"><Settings size={14} /></button>
+                    <button 
+                        onClick={() => toggleIndicatorVisibility(group.map(ind => ind.id))}
+                        className={`hover:text-blue-400 ${group[0]?.isVisible === false ? 'opacity-40' : ''}`} 
+                        title="Toggle Visibility"
+                    >
+                        <Eye size={14} />
+                    </button>
+                    <button onClick={() => setIndicatorToEdit(group)} className="hover:text-blue-400" title="Settings"><Settings size={14} /></button>
                     <button onClick={() => handleRemoveGroup(group)} className="hover:text-red-500" title="Remove"><Trash2 size={14} /></button>
                 </div>
             ))}
         </div>
     );
 };
-

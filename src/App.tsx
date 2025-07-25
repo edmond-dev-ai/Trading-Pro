@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Settings, Play, BarChartHorizontal } from 'lucide-react'; // --- MODIFIED: Imported new icon
+import { Settings, Play, BarChartHorizontal } from 'lucide-react';
 import { SymbolSelect } from './components/SymbolSelect';
 import { TimeframeSelect } from './components/TimeframeSelect';
 import { ReplayControls } from './components/ReplayControls';
 import { ChartComponent, type ChartHandle } from './components/ChartComponent';
 import { IndicatorsPanel } from './components/IndicatorsPanel';
-import { IndicatorStatus } from './components/IndicatorStatus'; // Import the new component
+import { IndicatorStatus } from './components/IndicatorStatus';
 import { FastTimeframeInput } from './components/FastTimeframeInput';
 import { useTradingProStore } from './store/store';
 import type { Indicator } from './store/store';
@@ -13,7 +13,8 @@ import { useDataService } from './hooks/useDataService';
 import { useReplayEngine } from './hooks/useReplayEngine';
 import type { LogicalRange } from 'lightweight-charts';
 import { SettingsPanel } from './components/SettingsPanel';
-import { webSocketService } from './hooks/useWebSocketService';
+import { webSocketService, recalculateIndicators } from './hooks/useWebSocketService';
+import { IndicatorSettingsModal } from './components/IndicatorSettingsModal';
 
 const ScrollToRecentButton = ({ onClick }: { onClick: () => void }) => (
     <button
@@ -41,11 +42,14 @@ function App() {
         isAtLiveEdge,
         replayScrollToTime,
         replayAnchor,
+        isChangingTimeframe,
+        indicatorToEdit,
         setReplayData,
         setTimeframe,
         setIsAtLiveEdge,
         setReplayScrollToTime,
-        isChangingTimeframe
+        setIndicatorToEdit,
+        setState, // --- MODIFICATION: Added setState from the store ---
     } = useTradingProStore();
 
     const chartComponentRef = useRef<ChartHandle>(null);
@@ -54,7 +58,6 @@ function App() {
     const shouldRescaleRef = useRef(true);
     const previousReplayStateRef = useRef(replayState);
     const isExitingReplayRef = useRef(false);
-    // --- ADDED: Track current data to detect when it actually changes ---
     const previousDataRef = useRef<any[]>([]);
 
     const [isTimeframeInputOpen, setIsTimeframeInputOpen] = useState(false);
@@ -89,15 +92,20 @@ function App() {
             }
             else if (replayAnchor) {
                 const newReplayData = await fetchFullDatasetForTimeframe(timeframe);
-                if (newReplayData.length > 0) {
-                    const anchorTime = replayAnchor.time;
-                    const newIndex = newReplayData.findIndex(candle => candle.time === anchorTime);
-                    if (newIndex !== -1) {
-                        setReplayData(newReplayData, newIndex);
-                        setReplayScrollToTime(newReplayData[newIndex].time);
-                        proactivelyFetchNextChunk();
-                    }
+                if (newReplayData && newReplayData.length > 0) {
+                    const newIndex = newReplayData.length - 1;
+                    const newAnchorTime = newReplayData[newIndex].time;
+                    
+                    setReplayData(newReplayData, newIndex);
+                    setReplayScrollToTime(newAnchorTime);
+                    recalculateIndicators(newReplayData);
+                    proactivelyFetchNextChunk();
+
+                } else {
+                    setReplayData([], -1);
                 }
+                // --- FIX: Reset the flag after replay data is handled ---
+                setState({ isChangingTimeframe: false });
             }
         };
 
@@ -119,57 +127,7 @@ function App() {
         return isReplayMode && replayData.length > 0
             ? replayData.slice(0, replayCurrentIndex + 1)
             : liveData.sort((a, b) => a.time - b.time);
-    }, [replayState, replayData, replayCurrentIndex, liveData, isChangingTimeframe]);
-
-    // --- MODIFIED: Only recalculate indicators when data actually changes and NOT during active replay ---
-    useEffect(() => {
-        // --- FIX: Don't recalculate during timeframe changes, empty data, or active replay playback ---
-        if (isChangingTimeframe || dataForChart.length === 0 || replayState === 'active') {
-            return;
-        }
-
-        // --- FIX: Check if data has actually changed by comparing length and last item ---
-        const hasDataChanged = 
-            dataForChart.length !== previousDataRef.current.length ||
-            (dataForChart.length > 0 && previousDataRef.current.length > 0 &&
-             dataForChart[dataForChart.length - 1].time !== previousDataRef.current[previousDataRef.current.length - 1]?.time);
-
-        if (!hasDataChanged) {
-            return;
-        }
-
-        // Update the ref to track current data
-        previousDataRef.current = dataForChart;
-
-        const { activeIndicators } = useTradingProStore.getState();
-        if (activeIndicators.length > 0) {
-            const uniqueIndicators = new Map<string, Indicator>();
-            activeIndicators.forEach(indicator => {
-                const multiLineMatch = indicator.id.match(/(.+)_\d+$/);
-                const baseId = multiLineMatch ? multiLineMatch[1] : indicator.id;
-                if (!uniqueIndicators.has(baseId)) {
-                    uniqueIndicators.set(baseId, indicator);
-                }
-            });
-
-            uniqueIndicators.forEach(indicator => {
-                const params = {
-                    id: indicator.id,
-                    name: indicator.name.toLowerCase(),
-                    ...indicator.options
-                };
-                if ('color' in params) {
-                    delete (params as { color?: string }).color;
-                }
-                webSocketService.sendMessage({
-                    action: 'get_indicator',
-                    params,
-                    data: dataForChart
-                });
-            });
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dataForChart, isChangingTimeframe, replayState]); // Add replayState dependency
+    }, [isChangingTimeframe, replayState, replayData, replayCurrentIndex, liveData]);
 
     const handleVisibleLogicalRangeChange = useCallback((range: LogicalRange | null) => {
         if (!range || dataForChart.length === 0) return;
@@ -248,6 +206,9 @@ function App() {
             {isSettingsOpen && <SettingsPanel onClose={() => setIsSettingsOpen(false)} />}
             {isIndicatorsPanelOpen && (
                 <IndicatorsPanel onClose={() => setIsIndicatorsPanelOpen(false)} />)}
+            {indicatorToEdit && (
+                <IndicatorSettingsModal indicatorGroup={indicatorToEdit} onClose={() => setIndicatorToEdit(null)} />
+            )}
 
             {isTimeframeInputOpen && (
                 <FastTimeframeInput
@@ -258,9 +219,7 @@ function App() {
                 />
             )}
 
-            {/* --- MODIFIED: Header layout updated --- */}
             <header className='flex-shrink-0 flex items-center justify-between h-10 px-2 border-b border-gray-700 bg-[#1e222d]'>
-                {/* Left Section */}
                 <div className="flex items-center space-x-2">
                     <button className="w-7 h-7 bg-purple-600 rounded-full flex items-center justify-center font-bold text-sm focus:outline-none ring-2 ring-transparent focus:ring-purple-400">
                         E
@@ -269,7 +228,6 @@ function App() {
                     <TimeframeSelect />
                 </div>
 
-                {/* Center Section */}
                 <div className="flex items-center space-x-2">
                      <button onClick={() => setIsIndicatorsPanelOpen(true)} className="flex items-center space-x-1.5 p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white text-xs" title="Indicators">
                         <BarChartHorizontal size={14} />
@@ -277,7 +235,6 @@ function App() {
                     </button>
                 </div>
 
-                {/* Right Section */}
                 <div className="flex items-center space-x-2">
                     <button onClick={replayEngine.enterReplayMode} className="flex items-center space-x-1.5 p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white text-xs">
                         <Play size={14} />
@@ -293,7 +250,7 @@ function App() {
                 <div className='flex-shrink-0 w-12 border-r border-gray-700 bg-[#1e222d]'></div>
 
                 <main className='flex-1 relative'>
-                    <IndicatorStatus /> {/* Add the status component here */}
+                    <IndicatorStatus /> 
                     <ChartComponent
                         ref={chartComponentRef}
                         data={dataForChart}

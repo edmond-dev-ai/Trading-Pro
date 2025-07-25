@@ -15,15 +15,21 @@ export const recalculateIndicators = (chartData: AppData[]) => {
     });
 
     uniqueIndicators.forEach(indicator => {
+        // *** THE BUG FIX IS HERE ***
+        // We must include the top-level color and isVisible properties in the request
+        // so they are preserved during recalculation.
         const params = {
             id: indicator.id,
             name: indicator.name.toLowerCase(),
-            ...indicator.options
+            ...indicator.options,
+            color: indicator.color, // Preserve color
+            isVisible: indicator.isVisible // Preserve visibility
         };
         
-        if ('color' in params) {
-            delete (params as { color?: string }).color;
-        }
+        // This check is no longer needed here as it's handled in the params
+        // if ('color' in params) {
+        //     delete (params as { color?: string }).color;
+        // }
 
         webSocketService.sendMessage({
             action: 'get_indicator',

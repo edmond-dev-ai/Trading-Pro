@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { useTradingProStore, type AppData } from '../store/store';
-import { webSocketService } from './useWebSocketService';
+import { webSocketService, recalculateIndicators } from './useWebSocketService';
 
 export const useDataService = () => {
     const isLoadingRef = useRef(false);
@@ -25,6 +25,8 @@ export const useDataService = () => {
         setLiveData(initialData);
         setHasMoreHistory(initialData.length >= 5000);
         setState({ isChangingTimeframe: false });
+        // Recalculate indicators after new data is set
+        recalculateIndicators(initialData);
     }, []);
 
     const fetchMoreHistory = useCallback(() => {
