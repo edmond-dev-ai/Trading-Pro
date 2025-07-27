@@ -8,13 +8,13 @@ import { IndicatorsPanel } from './components/IndicatorsPanel';
 import { IndicatorStatus } from './components/IndicatorStatus';
 import { FastTimeframeInput } from './components/FastTimeframeInput';
 import { useTradingProStore } from './store/store';
-import type { Indicator } from './store/store';
 import { useDataService } from './hooks/useDataService';
 import { useReplayEngine } from './hooks/useReplayEngine';
-import type { LogicalRange } from 'lightweight-charts';
+import type { LogicalRange, CandlestickData, UTCTimestamp, WhitespaceData } from 'lightweight-charts';
 import { SettingsPanel } from './components/SettingsPanel';
 import { webSocketService, recalculateIndicators } from './hooks/useWebSocketService';
 import { IndicatorSettingsModal } from './components/IndicatorSettingsModal';
+import { DrawingToolbar } from './components/DrawingToolbar';
 
 const ScrollToRecentButton = ({ onClick }: { onClick: () => void }) => (
     <button
@@ -27,6 +27,23 @@ const ScrollToRecentButton = ({ onClick }: { onClick: () => void }) => (
         </svg>
     </button>
 );
+
+const getTimeframeInSeconds = (tf: string): number => {
+    if (!tf || tf.length < 2) return 0;
+    const unit = tf.slice(-1).toLowerCase();
+    const valueStr = tf.slice(0, -1);
+    const value = parseInt(valueStr, 10);
+    if (isNaN(value)) return 0;
+
+    switch (unit) {
+        case 'm': return value * 60;
+        case 'h': return value * 60 * 60;
+        case 'd': return value * 24 * 60 * 60;
+        case 'w': return value * 7 * 24 * 60 * 60;
+        default: return 0;
+    }
+};
+
 
 function App() {
     const { loadInitialDataForTimeframe, fetchMoreHistory, fetchMoreReplayHistory, fetchFullDatasetForTimeframe } = useDataService();
@@ -49,7 +66,7 @@ function App() {
         setIsAtLiveEdge,
         setReplayScrollToTime,
         setIndicatorToEdit,
-        setState, // --- MODIFICATION: Added setState from the store ---
+        setState,
     } = useTradingProStore();
 
     const chartComponentRef = useRef<ChartHandle>(null);
@@ -58,7 +75,6 @@ function App() {
     const shouldRescaleRef = useRef(true);
     const previousReplayStateRef = useRef(replayState);
     const isExitingReplayRef = useRef(false);
-    const previousDataRef = useRef<any[]>([]);
 
     const [isTimeframeInputOpen, setIsTimeframeInputOpen] = useState(false);
     const [timeframeInputValue, setTimeframeInputValue] = useState('');
@@ -104,7 +120,6 @@ function App() {
                 } else {
                     setReplayData([], -1);
                 }
-                // --- FIX: Reset the flag after replay data is handled ---
                 setState({ isChangingTimeframe: false });
             }
         };
@@ -120,14 +135,40 @@ function App() {
     }, [replayState, symbol]);
 
     const dataForChart = useMemo(() => {
+        const WHITESPACE_COUNT = 10000
         if (isChangingTimeframe) {
             return [];
         }
         const isReplayMode = replayState !== 'idle' && replayState !== 'standby';
-        return isReplayMode && replayData.length > 0
-            ? replayData.slice(0, replayCurrentIndex + 1)
-            : liveData.sort((a, b) => a.time - b.time);
-    }, [isChangingTimeframe, replayState, replayData, replayCurrentIndex, liveData]);
+
+        if (isReplayMode && replayData.length > 0) {
+            return replayData.slice(0, replayCurrentIndex + 1);
+        } else {
+            const sortedLiveData = [...liveData].sort((a, b) => a.time - b.time);
+            if (sortedLiveData.length === 0) {
+                return [];
+            }
+    
+            const lastTimestamp = sortedLiveData[sortedLiveData.length - 1].time;
+            const interval = getTimeframeInSeconds(timeframe);
+    
+            if (interval === 0) {
+                return sortedLiveData;
+            }
+    
+            const dataWithWhitespace: (CandlestickData<UTCTimestamp> | WhitespaceData<UTCTimestamp>)[] = [...sortedLiveData];
+    
+            // --- MODIFICATION: Changed loop logic to be more type-safe ---
+            const lastKnownTime = lastTimestamp as number;
+            for (let i = 1; i <= WHITESPACE_COUNT; i++) {
+                const nextTime = lastKnownTime + (interval * i);
+                dataWithWhitespace.push({ time: nextTime as UTCTimestamp });
+            }
+            return dataWithWhitespace;
+        }
+
+    }, [isChangingTimeframe, replayState, replayData, replayCurrentIndex, liveData, timeframe]);
+
 
     const handleVisibleLogicalRangeChange = useCallback((range: LogicalRange | null) => {
         if (!range || dataForChart.length === 0) return;
@@ -137,7 +178,8 @@ function App() {
             hasMoreHistory: currentHasMoreHistory
         } = useTradingProStore.getState();
 
-        const isAtEdge = range.to >= dataForChart.length;
+        const lastCandleIndex = (currentReplayState === 'idle' ? liveData.length : dataForChart.length) -1;
+        const isAtEdge = range.to >= lastCandleIndex;
         setIsAtLiveEdge(isAtEdge);
 
         if (range.from < 50 && currentHasMoreHistory) {
@@ -147,7 +189,7 @@ function App() {
                 fetchMoreReplayHistory();
             }
         }
-    }, [dataForChart.length, fetchMoreHistory, fetchMoreReplayHistory, setIsAtLiveEdge]);
+    }, [dataForChart.length, fetchMoreHistory, fetchMoreReplayHistory, setIsAtLiveEdge, liveData.length]);
 
     const handleScrollToRecent = useCallback(() => {
         if (replayState === 'idle') {
@@ -247,7 +289,9 @@ function App() {
             </header>
 
             <div className='flex flex-1 overflow-hidden'>
-                <div className='flex-shrink-0 w-12 border-r border-gray-700 bg-[#1e222d]'></div>
+                <div className='flex-shrink-0 w-12 border-r border-gray-700 bg-[#1e222d]'>
+                    <DrawingToolbar />
+                </div>
 
                 <main className='flex-1 relative'>
                     <IndicatorStatus /> 

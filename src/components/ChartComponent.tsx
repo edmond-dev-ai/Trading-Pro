@@ -3,15 +3,17 @@ import {
     type IChartApi, type ISeriesApi, type CandlestickData, type UTCTimestamp,
     type LogicalRange, type MouseEventParams, type LineWidth,
     type LineData,
-    // --- FIX: Import the series type objects ---
+    type WhitespaceData, // --- MODIFICATION: Imported WhitespaceData type ---
     CandlestickSeries,
     LineSeries
 } from 'lightweight-charts';
-import React, { useEffect, useImperativeHandle, useRef, useState, memo } from 'react';
+import React, { useEffect, useImperativeHandle, useRef, memo } from 'react';
+import { format, addHours } from 'date-fns';
 import { useTradingProStore } from '../store/store';
 
 interface ChartComponentProps {
-    data: CandlestickData<UTCTimestamp>[];
+    // --- MODIFICATION: Updated data prop to accept WhitespaceData ---
+    data: (CandlestickData<UTCTimestamp> | WhitespaceData<UTCTimestamp>)[];
     onVisibleLogicalRangeChange: (range: LogicalRange | null) => void;
     onChartClick: (time: UTCTimestamp) => void;
     isClickArmed: boolean;
@@ -38,7 +40,7 @@ const chartOptions = {
     crosshair: {
         mode: CrosshairMode.Normal,
         horzLine: { labelVisible: true, labelBackgroundColor: '#374151' },
-        vertLine: { labelVisible: false }
+        vertLine: { labelVisible: true, labelBackgroundColor: '#374151' }
     },
     autoSize: true,
 };
@@ -48,7 +50,6 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
         const chartContainerRef = useRef<HTMLDivElement>(null);
         const chartRef = useRef<IChartApi | null>(null);
         const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-        const [tooltip, setTooltip] = useState<{ visible: boolean, x: number, y: number, content: string }>({ visible: false, x: 0, y: 0, content: '' });
 
         const indicatorSeriesRef = useRef(new Map<string, ISeriesApi<'Line'>>());
 
@@ -56,12 +57,14 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
         const candlestickColors = useTradingProStore((state) => state.candlestickColors);
         const activeIndicators = useTradingProStore((state) => state.activeIndicators);
         const replayState = useTradingProStore((state) => state.replayState);
+        const timeframe = useTradingProStore((state) => state.timeframe);
 
         useImperativeHandle(ref, () => ({
             scrollToRealtime: () => chartRef.current?.timeScale().scrollToRealTime(),
             scrollToTime: (time) => {
                 const chart = chartRef.current;
                 if (!chart) return;
+                // --- MODIFICATION: findIndex now works on a mixed-type array ---
                 const dataIndex = data.findIndex(d => d.time === time);
                 if (dataIndex !== -1) {
                     chart.timeScale().scrollToPosition(dataIndex, false);
@@ -80,10 +83,29 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
                 grid: {
                     vertLines: { color: chartAppearance.vertGridColor },
                     horzLines: { color: chartAppearance.horzGridColor },
+                },
+                localization: {
+                    dateFormat: 'dd MMM \'yy',
+                    timeFormatter: (time: UTCTimestamp) => {
+                        const originalDate = new Date(time * 1000);
+                        
+                        // Only adjust display for daily and higher timeframes
+                        const isDailyOrHigher = timeframe && ['1D', '1W', '1M'].includes(timeframe);
+                        
+                        if (isDailyOrHigher) {
+                            // For daily+ timeframes, add 12 hours to show the actual trading day
+                            // This is only for display purposes, not changing the actual data
+                            // Show only date without time for daily and higher timeframes
+                            const displayDate = addHours(originalDate, 12);
+                            return format(displayDate, 'eee d MMM yy');
+                        } else {
+                            // For intraday timeframes, show the exact timestamp with time
+                            return format(originalDate, 'eee d MMM yy HH:mm');
+                        }
+                    }
                 }
             });
             chartRef.current = chart;
-            // --- FIX: Use the imported CandlestickSeries object ---
             const series = chart.addSeries(CandlestickSeries, candlestickColors);
             seriesRef.current = series;
 
@@ -93,6 +115,35 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
             };
             // eslint-disable-next-line react-hooks/exhaustive-deps
         }, []);
+
+        // Update timeFormatter when timeframe changes
+        useEffect(() => {
+            const chart = chartRef.current;
+            if (!chart) return;
+
+            chart.applyOptions({
+                localization: {
+                    dateFormat: 'dd MMM \'yy',
+                    timeFormatter: (time: UTCTimestamp) => {
+                        const originalDate = new Date(time * 1000);
+                        
+                        // Only adjust display for daily and higher timeframes
+                        const isDailyOrHigher = timeframe && ['1D', '1W', '1M'].includes(timeframe);
+                        
+                        if (isDailyOrHigher) {
+                            // For daily+ timeframes, add 12 hours to show the actual trading day
+                            // This is only for display purposes, not changing the actual data
+                            // Show only date without time for daily and higher timeframes
+                            const displayDate = addHours(originalDate, 12);
+                            return format(displayDate, 'eee d MMM yy');
+                        } else {
+                            // For intraday timeframes, show the exact timestamp with time
+                            return format(originalDate, 'eee d MMM yy HH:mm');
+                        }
+                    }
+                }
+            });
+        }, [timeframe]);
 
         useEffect(() => {
             if (!chartRef.current) return;
@@ -134,7 +185,7 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
                 const isVisible = indicator.isVisible ?? true;
                 if (!series) {
                     series = chart.addSeries(LineSeries, {
-                        color: indicator.color || '#2563eb', // Use indicator.color if available
+                        color: indicator.color || '#2563eb',
                         lineWidth: 1,
                         lastValueVisible: false,
                         priceLineVisible: false,
@@ -143,11 +194,9 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
                     });
                     indicatorSeriesRef.current.set(indicator.id, series);
                 } else {
-                    // Check if visibility has changed
                     if (series.options().visible !== isVisible) {
                         series.applyOptions({ visible: isVisible });
                     }
-                    // Check if color has changed
                     if (series.options().color !== indicator.color) {
                         series.applyOptions({ color: indicator.color || '#2563eb' });
                     }
@@ -194,16 +243,6 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
         useEffect(() => {
             const chart = chartRef.current;
             if (!chart) return;
-            const handleCrosshairMove = (param: MouseEventParams) => {
-                if (!param.point || !param.time || !seriesRef.current || !param.seriesData.has(seriesRef.current)) {
-                    setTooltip(prev => ({ ...prev, visible: false }));
-                    return;
-                }
-                const date = new Date((param.time as number) * 1000);
-                const options: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false };
-                const formattedTime = new Intl.DateTimeFormat('en-GB', options).format(date).replace(/,/g, '');
-                setTooltip({ visible: true, x: param.point.x, y: param.point.y, content: formattedTime });
-            };
 
             const handleClick = (param: MouseEventParams) => {
                 if (isClickArmed && param.time && typeof param.time === 'number') {
@@ -211,12 +250,10 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
                 }
             }
             const rangeChangeHandler = (range: LogicalRange | null) => onVisibleLogicalRangeChange(range);
-            chart.subscribeCrosshairMove(handleCrosshairMove);
             chart.subscribeClick(handleClick);
             chart.timeScale().subscribeVisibleLogicalRangeChange(rangeChangeHandler);
             return () => {
                 if (chartRef.current) {
-                    chart.unsubscribeCrosshairMove(handleCrosshairMove);
                     chart.unsubscribeClick(handleClick);
                     chart.timeScale().unsubscribeVisibleLogicalRangeChange(rangeChangeHandler);
                 }
@@ -237,9 +274,7 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
             if (!chart || !activeIndicators.length) return;
 
             if (replayState !== 'idle') {
-                // --- FIX: Add a guard clause to prevent crash when data is empty ---
                 if (data.length === 0) {
-                    // Clear indicator series if there's no main data
                     activeIndicators.forEach(indicator => {
                         const series = indicatorSeriesRef.current.get(indicator.id);
                         if (series) {
@@ -270,14 +305,6 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
 
         return (
             <div ref={chartContainerRef} className='w-full h-full relative cursor-crosshair'>
-                {tooltip.visible && (
-                    <div
-                        className='absolute z-10 py-1 px-2 bg-gray-700 bg-opacity-80 backdrop-blur-sm text-white text-[11px] rounded-md pointer-events-none'
-                        style={{ bottom: '2px', left: `${tooltip.x}px`, transform: 'translateX(-50%)' }}
-                    >
-                        {tooltip.content}
-                    </div>
-                )}
             </div>
         );
     }

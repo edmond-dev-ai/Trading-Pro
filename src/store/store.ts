@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { CandlestickData, UTCTimestamp, LineData } from 'lightweight-charts';
 
-// --- NEW: Drawing-related types ---
+// --- Drawing-related types ---
 export interface DrawingPoint {
   time: UTCTimestamp;
   price: number;
@@ -11,11 +11,12 @@ export interface TrendlineDrawing {
   id: string;
   type: 'trendline';
   points: [DrawingPoint, DrawingPoint];
-  // Future properties: color, width, etc.
+  // --- MODIFICATION: Added style properties ---
+  color?: string;
+  width?: number;
 }
 export type Drawing = TrendlineDrawing; // Add other drawing types here with | in the future
-export type DrawingTool = 'trendline' | null;
-// --- END NEW ---
+export type DrawingTool = 'trendline' | 'long-position' | 'short-position' | 'fib-retracement' | 'horizontal-ray' | 'vertical-line' | null;
 
 
 export type AppData = Omit<CandlestickData<UTCTimestamp>, 'time'> & { time: UTCTimestamp };
@@ -70,7 +71,7 @@ export interface TradingProState {
   activeIndicators: Indicator[];
   indicatorToEdit: Indicator[] | null;
 
-  // --- NEW: Drawing state ---
+  // --- Drawing state ---
   activeDrawingTool: DrawingTool;
   drawings: Drawing[];
 
@@ -106,7 +107,7 @@ export interface TradingProState {
   toggleIndicatorVisibility: (ids: string[]) => void;
   updateIndicatorStyle: (id: string, newStyle: Partial<Pick<Indicator, 'color'>>) => void;
 
-  // --- NEW: Drawing actions ---
+  // --- Drawing actions ---
   setActiveDrawingTool: (tool: DrawingTool) => void;
   addDrawing: (drawing: Drawing) => void;
   removeDrawing: (id: string) => void;
@@ -162,7 +163,7 @@ export const useTradingProStore = create<TradingProState>()(persist((set, get) =
     wickDownColor: '#ef4444',
   },
   
-  // --- NEW: Initial state for drawings ---
+  // --- Initial state for drawings ---
   activeDrawingTool: null,
   drawings: [],
 
@@ -288,7 +289,7 @@ export const useTradingProStore = create<TradingProState>()(persist((set, get) =
     )
   })),
 
-  // --- NEW: Drawing action implementations ---
+  // --- Drawing action implementations ---
   setActiveDrawingTool: (tool) => set({ activeDrawingTool: tool }),
   addDrawing: (drawing) => set((state) => ({ drawings: [...state.drawings, drawing] })),
   removeDrawing: (id) => set((state) => ({ drawings: state.drawings.filter(d => d.id !== id) })),
@@ -296,16 +297,15 @@ export const useTradingProStore = create<TradingProState>()(persist((set, get) =
 
 }), {
   name: 'trading-pro-store',
-  version: 2, // Bump version due to new persisted state
+  version: 2,
   partialize: (state) => ({
     activeIndicators: state.activeIndicators,
     favoriteTimeframes: state.favoriteTimeframes,
     customTimeframes: state.customTimeframes,
     candlestickColors: state.candlestickColors,
     chartAppearance: state.chartAppearance,
-    drawings: state.drawings, // --- NEW: Persist drawings ---
+    drawings: state.drawings,
   }),
-  // Reset replay state on load
   onRehydrateStorage: () => (state, error) => {
     if (state) {
         state.setReplayState('idle');
@@ -314,5 +314,4 @@ export const useTradingProStore = create<TradingProState>()(persist((set, get) =
   }
 }));
 
-// Manual call to reset replay state on initial load
 useTradingProStore.getState().setReplayState('idle');
