@@ -1,22 +1,94 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { CandlestickData, UTCTimestamp, LineData } from 'lightweight-charts';
+import type { UTCTimestamp as LwChartUTCTimestamp } from 'lightweight-charts';
+import type { CandlestickData, LineData } from 'lightweight-charts';
+import { getTimezoneOffset } from 'date-fns-tz';
 
 // --- Drawing-related types ---
+
+export type UTCTimestamp = LwChartUTCTimestamp;
+
+export type LineStyle = 'Solid' | 'Dashed' | 'Dotted';
+
 export interface DrawingPoint {
   time: UTCTimestamp;
   price: number;
 }
-export interface TrendlineDrawing {
+
+export interface BaseDrawing {
+    color?: string;
+    width?: number;
+    lineStyle?: LineStyle;
+    fillColor?: string; // For rectangles
+    profitColor?: string; // For position tools
+    stopColor?: string; // For position tools
+    lineColor?: string; // For position tools
+    timezone?: string; // Track which timezone this drawing was created in
+}
+
+export interface TrendlineDrawing extends BaseDrawing {
   id: string;
   type: 'trendline';
   points: [DrawingPoint, DrawingPoint];
-  // --- MODIFICATION: Added style properties ---
-  color?: string;
-  width?: number;
 }
-export type Drawing = TrendlineDrawing; // Add other drawing types here with | in the future
-export type DrawingTool = 'trendline' | 'long-position' | 'short-position' | 'fib-retracement' | 'horizontal-ray' | 'vertical-line' | null;
+export interface VerticalLineDrawing extends BaseDrawing {
+    id: string;
+    type: 'vertical';
+    time: UTCTimestamp;
+    color: string;
+    width: number;
+}
+export interface HorizontalRayDrawing extends BaseDrawing {
+    id: string;
+    type: 'horizontalRay';
+    time: UTCTimestamp; 
+    points: [DrawingPoint, DrawingPoint];
+    price: number;
+    color: string;
+    width: number;
+}
+
+export interface FibRetracementDrawing extends BaseDrawing {
+    id: string;
+    type: 'fib-retracement';
+    points: [DrawingPoint, DrawingPoint]; 
+    showLabels?: boolean; 
+    levels: { 
+        value: number; 
+        label: string; 
+        color: string; 
+        lineStyle: LineStyle;
+    }[];
+}
+
+export interface RectangleDrawing extends BaseDrawing {
+    id: string;
+    type: 'rectangle';
+    points: [DrawingPoint, DrawingPoint];
+    // --- FIX START ---
+    // Added the optional snappedPoints property to serve as the "anchor".
+    snappedPoints?: [DrawingPoint, DrawingPoint];
+    // --- FIX END ---
+}
+
+export interface PositionDrawing extends BaseDrawing {
+    id: string;
+    type: 'long-position' | 'short-position';
+    entryPoint: DrawingPoint;
+    profitPoint: DrawingPoint;
+    stopPoint: DrawingPoint;
+    endPoint?: DrawingPoint; 
+    lineWidth: number;
+    points?: DrawingPoint[];
+}
+
+export type Drawing = TrendlineDrawing | VerticalLineDrawing | HorizontalRayDrawing | FibRetracementDrawing | RectangleDrawing | PositionDrawing; 
+
+export type DrawingTool = 'trendline' | 'fib-retracement' | 'horizontalRay' | 'vertical' | 'rectangle' | 'long-position' | 'short-position';
+
+export type DrawingDefaults = {
+    [key in DrawingTool]: BaseDrawing;
+};
 
 
 export type AppData = Omit<CandlestickData<UTCTimestamp>, 'time'> & { time: UTCTimestamp };
@@ -70,10 +142,18 @@ export interface TradingProState {
   candlestickColors: CandlestickColorSettings;
   activeIndicators: Indicator[];
   indicatorToEdit: Indicator[] | null;
+  timezone: string;
 
   // --- Drawing state ---
-  activeDrawingTool: DrawingTool;
+  activeDrawingTool: DrawingTool | null;
   drawings: Drawing[];
+  selectedDrawingId: string | null; 
+  favoriteDrawingTools: DrawingTool[];
+  isFavoriteToolbarVisible: boolean;
+  isDrawingSettingsModalOpen: boolean;
+  customColors: string[];
+  drawingDefaults: DrawingDefaults;
+  isMagnetModeActive: boolean; 
 
   // Actions
   setSymbol: (symbol: string) => void;
@@ -82,7 +162,7 @@ export interface TradingProState {
   addCustomTimeframe: (timeframe: string) => void;
   removeCustomTimeframe: (timeframe: string) => void;
   setLiveData: (data: AppData[]) => void;
-  appendHistory: (pastData: AppData[]) => void;
+  appendHistory: (pastDatadata: AppData[]) => void;
   prependReplayHistory: (pastData: AppData[], hasMore: boolean) => void;
   setHasMoreHistory: (hasMore: boolean) => void;
   setIsAtLiveEdge: (isAtEdge: boolean) => void;
@@ -106,12 +186,22 @@ export interface TradingProState {
   removeIndicatorsByIds: (ids: string[]) => void;
   toggleIndicatorVisibility: (ids: string[]) => void;
   updateIndicatorStyle: (id: string, newStyle: Partial<Pick<Indicator, 'color'>>) => void;
+  addCustomColor: (color: string) => void;
+  setTimezone: (timezone: string) => void;
 
   // --- Drawing actions ---
-  setActiveDrawingTool: (tool: DrawingTool) => void;
+  setActiveDrawingTool: (tool: DrawingTool | null) => void;
+  clearActiveTool: () => void;
   addDrawing: (drawing: Drawing) => void;
   removeDrawing: (id: string) => void;
+  updateDrawing: (id: string, data: Partial<Drawing>) => void;
   clearDrawings: () => void;
+  setSelectedDrawingId: (id: string | null) => void;
+  toggleFavoriteDrawingTool: (tool: DrawingTool) => void;
+  setFavoriteToolbarVisible: (isVisible: boolean) => void;
+  setDrawingSettingsModalOpen: (isOpen: boolean) => void;
+  setDrawingDefaults: (tool: DrawingTool, defaults: BaseDrawing) => void;
+  setIsMagnetModeActive: (isActive: boolean) => void; 
 }
 
 export const timeframeToMinutes = (tf: string): number => {
@@ -130,6 +220,86 @@ export const timeframeToMinutes = (tf: string): number => {
         default: return Infinity;
     }
 }
+
+// --- FIX: Timezone conversion helper functions ---
+const convertDrawingTimezone = (drawing: Drawing, fromTimezone: string, toTimezone: string): Drawing => {
+    if (fromTimezone === toTimezone) return drawing;
+    
+    const fromOffset = getTimezoneOffset(fromTimezone, new Date()) / 1000;
+    const toOffset = getTimezoneOffset(toTimezone, new Date()) / 1000;
+    const offsetDiff = toOffset - fromOffset;
+    
+    const convertTime = (time: UTCTimestamp): UTCTimestamp => {
+        return (time + offsetDiff) as UTCTimestamp;
+    };
+    
+    const convertPoint = (point: DrawingPoint): DrawingPoint => ({
+        ...point,
+        time: convertTime(point.time)
+    });
+    
+    switch (drawing.type) {
+        case 'trendline': {
+            const trendlineDrawing = drawing as TrendlineDrawing;
+            return {
+                ...trendlineDrawing,
+                points: trendlineDrawing.points.map(convertPoint) as [DrawingPoint, DrawingPoint],
+                timezone: toTimezone
+            };
+        }
+        case 'vertical': {
+            const verticalDrawing = drawing as VerticalLineDrawing;
+            return {
+                ...verticalDrawing,
+                time: convertTime(verticalDrawing.time),
+                timezone: toTimezone
+            };
+        }
+        case 'horizontalRay': {
+            const horizontalRayDrawing = drawing as HorizontalRayDrawing;
+            return {
+                ...horizontalRayDrawing,
+                time: convertTime(horizontalRayDrawing.time),
+                points: horizontalRayDrawing.points.map(convertPoint) as [DrawingPoint, DrawingPoint],
+                timezone: toTimezone
+            };
+        }
+        case 'fib-retracement': {
+            const fibDrawing = drawing as FibRetracementDrawing;
+            return {
+                ...fibDrawing,
+                points: fibDrawing.points.map(convertPoint) as [DrawingPoint, DrawingPoint],
+                timezone: toTimezone
+            };
+        }
+        case 'rectangle': {
+            const rectangleDrawing = drawing as RectangleDrawing;
+            return {
+                ...rectangleDrawing,
+                points: rectangleDrawing.points.map(convertPoint) as [DrawingPoint, DrawingPoint],
+                snappedPoints: rectangleDrawing.snappedPoints?.map(convertPoint) as [DrawingPoint, DrawingPoint] | undefined,
+                timezone: toTimezone
+            };
+        }
+        case 'long-position':
+        case 'short-position': {
+            const positionDrawing = drawing as PositionDrawing;
+            return {
+                ...positionDrawing,
+                entryPoint: convertPoint(positionDrawing.entryPoint),
+                profitPoint: convertPoint(positionDrawing.profitPoint),
+                stopPoint: convertPoint(positionDrawing.stopPoint),
+                endPoint: positionDrawing.endPoint ? convertPoint(positionDrawing.endPoint) : undefined,
+                points: positionDrawing.points?.map(convertPoint),
+                timezone: toTimezone
+            };
+        }
+        default: {
+            const baseDrawing = drawing as any;
+            return { ...baseDrawing, timezone: toTimezone };
+        }
+    }
+};
 
 export const useTradingProStore = create<TradingProState>()(persist((set, get) => ({
   symbol: 'XAUUSD',
@@ -162,10 +332,25 @@ export const useTradingProStore = create<TradingProState>()(persist((set, get) =
     wickUpColor: '#22c55e',
     wickDownColor: '#ef4444',
   },
+  timezone: 'Etc/UTC',
   
-  // --- Initial state for drawings ---
   activeDrawingTool: null,
   drawings: [],
+  selectedDrawingId: null,
+  favoriteDrawingTools: ['trendline'],
+  isFavoriteToolbarVisible: false,
+  isDrawingSettingsModalOpen: false,
+  customColors: [],
+  drawingDefaults: {
+    trendline: { color: '#2563eb', width: 2, lineStyle: 'Solid' },
+    vertical: { color: '#2563eb', width: 2, lineStyle: 'Solid' },
+    horizontalRay: { color: '#2563eb', width: 2, lineStyle: 'Solid' },
+    'fib-retracement': { color: '#2563eb', width: 2, lineStyle: 'Solid' },
+    rectangle: { color: '#888888', fillColor: 'rgba(136, 136, 136, 0.2)', width: 2, lineStyle: 'Solid' },
+    'long-position': { profitColor: 'rgba(34, 197, 94, 0.2)', stopColor: 'rgba(239, 68, 68, 0.2)', lineColor: '#FFFFFF', width: 1 },
+    'short-position': { profitColor: 'rgba(34, 197, 94, 0.2)', stopColor: 'rgba(239, 68, 68, 0.2)', lineColor: '#FFFFFF', width: 1 },
+  },
+  isMagnetModeActive: false,
 
   setSymbol: (symbol) => set((state) => ({
     symbol,
@@ -173,7 +358,7 @@ export const useTradingProStore = create<TradingProState>()(persist((set, get) =
     hasMoreHistory: true,
     isAtLiveEdge: true,
     activeIndicators: state.activeIndicators.map(indicator => ({ ...indicator, data: [] })),
-    drawings: [], // Clear drawings on symbol change
+    drawings: [],
   })),
   setTimeframe: (timeframe) => {
     const state = get();
@@ -288,16 +473,91 @@ export const useTradingProStore = create<TradingProState>()(persist((set, get) =
       indicator.id === id ? { ...indicator, ...newStyle } : indicator
     )
   })),
+  addCustomColor: (color) => set((state) => {
+    if (!state.customColors.includes(color)) {
+        return { customColors: [...state.customColors, color] };
+    }
+    return {};
+  }),
+  // --- FIX: Enhanced setTimezone with drawing migration ---
+  setTimezone: (newTimezone) => set((state) => {
+    const oldTimezone = state.timezone;
+    
+    // Convert all existing drawings to the new timezone
+    const convertedDrawings = state.drawings.map(drawing => {
+      const drawingTimezone = drawing.timezone || oldTimezone;
+      return convertDrawingTimezone(drawing, drawingTimezone, newTimezone);
+    });
+    
+    return { 
+      timezone: newTimezone,
+      drawings: convertedDrawings
+    };
+  }),
 
-  // --- Drawing action implementations ---
-  setActiveDrawingTool: (tool) => set({ activeDrawingTool: tool }),
-  addDrawing: (drawing) => set((state) => ({ drawings: [...state.drawings, drawing] })),
-  removeDrawing: (id) => set((state) => ({ drawings: state.drawings.filter(d => d.id !== id) })),
-  clearDrawings: () => set({ drawings: [] }),
+  // --- Drawing actions ---
+  setActiveDrawingTool: (tool) => {
+    set({ activeDrawingTool: tool, selectedDrawingId: null });
+  },
+  clearActiveTool: () => set({ activeDrawingTool: null, selectedDrawingId: null }),
+  // --- FIX: Enhanced addDrawing to include current timezone ---
+  addDrawing: (drawing) => set((state) => ({ 
+    drawings: [...state.drawings, { ...drawing, timezone: state.timezone }] 
+  })),
+  removeDrawing: (id) => set((state) => ({ 
+      drawings: state.drawings.filter(d => d.id !== id),
+      selectedDrawingId: state.selectedDrawingId === id ? null : state.selectedDrawingId,
+  })),
+  updateDrawing: (id, data) => set((state) => ({
+    drawings: state.drawings.map(d => {
+      if (d.id !== id) return d;
+      
+      const typeProperties: Record<string, string[]> = {
+        trendline: ['points', 'color', 'width', 'lineStyle'],
+        vertical: ['time', 'color', 'width', 'lineStyle'],
+        horizontalRay: ['time', 'price', 'color', 'width', 'lineStyle'],
+        'fib-retracement': ['points', 'color', 'width', 'showLabels', 'levels', 'lineStyle'],
+        // --- FIX START ---
+        // Added 'snappedPoints' to the list of updatable properties for rectangles.
+        rectangle: ['points', 'color', 'width', 'lineStyle', 'fillColor', 'snappedPoints'],
+        // --- FIX END ---
+        'long-position': ['entryPoint', 'profitPoint', 'stopPoint', 'endPoint', 'points'],
+        'short-position': ['entryPoint', 'profitPoint', 'stopPoint', 'endPoint', 'points'],
+      };
 
+      const allowedProps = typeProperties[d.type as DrawingTool];
+      if (!allowedProps) return d;
+      
+      const filteredData = Object.fromEntries(
+        Object.entries(data).filter(([key]) => 
+          allowedProps.includes(key)
+        )
+      );
+
+      return Object.keys(filteredData).length > 0 ? { ...d, ...filteredData } : d;
+    })
+  })),
+  clearDrawings: () => set({ drawings: [], selectedDrawingId: null }),
+  setSelectedDrawingId: (id) => set({ selectedDrawingId: id, activeDrawingTool: null }),
+  toggleFavoriteDrawingTool: (tool) => set((state) => {
+      if (!tool) return {};
+      const newFavorites = state.favoriteDrawingTools.includes(tool)
+          ? state.favoriteDrawingTools.filter(fav => fav !== tool)
+          : [...state.favoriteDrawingTools, tool];
+      return { favoriteDrawingTools: newFavorites };
+  }),
+  setFavoriteToolbarVisible: (isVisible) => set({ isFavoriteToolbarVisible: isVisible }),
+  setDrawingSettingsModalOpen: (isOpen) => set({ isDrawingSettingsModalOpen: isOpen }),
+  setDrawingDefaults: (tool, defaults) => set((state) => ({
+    drawingDefaults: {
+        ...state.drawingDefaults,
+        [tool]: { ...state.drawingDefaults[tool], ...defaults },
+    },
+  })),
+  setIsMagnetModeActive: (isActive) => set({ isMagnetModeActive: isActive }), 
 }), {
   name: 'trading-pro-store',
-  version: 2,
+  version: 9, // Incremented version for migration
   partialize: (state) => ({
     activeIndicators: state.activeIndicators,
     favoriteTimeframes: state.favoriteTimeframes,
@@ -305,11 +565,32 @@ export const useTradingProStore = create<TradingProState>()(persist((set, get) =
     candlestickColors: state.candlestickColors,
     chartAppearance: state.chartAppearance,
     drawings: state.drawings,
+    favoriteDrawingTools: state.favoriteDrawingTools,
+    selectedDrawingId: state.selectedDrawingId,
+    isFavoriteToolbarVisible: state.isFavoriteToolbarVisible,
+    customColors: state.customColors,
+    drawingDefaults: state.drawingDefaults,
+    isMagnetModeActive: state.isMagnetModeActive,
+    timezone: state.timezone,
   }),
-  onRehydrateStorage: () => (state, error) => {
+  onRehydrateStorage: () => (state, _error) => {
     if (state) {
         state.setReplayState('idle');
         state.loadReplayData([], -1, null);
+        state.setSelectedDrawingId(null);
+        state.setFavoriteToolbarVisible(false);
+        state.setDrawingSettingsModalOpen(false);
+        
+        // --- FIX: Migration for existing drawings without timezone ---
+        const currentTimezone = state.timezone || 'Etc/UTC';
+        const migratedDrawings = state.drawings.map(drawing => ({
+          ...drawing,
+          timezone: drawing.timezone || currentTimezone
+        }));
+        
+        if (migratedDrawings.some((_, i) => !state.drawings[i].timezone)) {
+          state.setState({ drawings: migratedDrawings });
+        }
     }
   }
 }));

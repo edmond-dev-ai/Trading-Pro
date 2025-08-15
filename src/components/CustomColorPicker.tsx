@@ -3,13 +3,13 @@ import { createPortal } from 'react-dom';
 import { Plus } from 'lucide-react';
 import { ColorCanvas } from './ColorCanvas';
 import { HueSlider } from './HueSlider';
+import { useTradingProStore } from '../store/store';
 
 interface CustomColorPickerProps {
     color: string;
     onChange: (color: string) => void;
 }
 
-// Helper to convert hex to an RGBA object
 const hexToRgba = (hex: string) => {
     let r = 0, g = 0, b = 0;
     if (hex.length === 4) {
@@ -24,7 +24,6 @@ const hexToRgba = (hex: string) => {
     return { r, g, b, a: 1 };
 };
 
-// Helper to convert rgba string to an object
 const rgbaStringToObject = (rgba: string) => {
     if (rgba.startsWith('#')) {
         const { r, g, b } = hexToRgba(rgba);
@@ -41,7 +40,6 @@ const rgbaStringToObject = (rgba: string) => {
     };
 };
 
-// Convert RGB to HSL
 const rgbToHsl = (r: number, g: number, b: number) => {
     r /= 255;
     g /= 255;
@@ -65,7 +63,6 @@ const rgbToHsl = (r: number, g: number, b: number) => {
     return { h: h * 360, s: s * 100, l: l * 100 };
 };
 
-// Helper to convert HSL to hex
 const hslToHex = (h: number, s: number, l: number) => {
     l /= 100;
     const a = s * Math.min(l, 1 - l) / 100;
@@ -77,7 +74,6 @@ const hslToHex = (h: number, s: number, l: number) => {
     return `#${f(0)}${f(8)}${f(4)}`;
 };
 
-// TradingView default color palette
 const defaultColors = [
     ['#ffffff', '#e8e8e8', '#d1d1d1', '#b8b8b8', '#a0a0a0', '#888888', '#707070', '#585858', '#404040', '#000000'],
     ['#f44336', '#ff9800', '#ffeb3b', '#4caf50', '#00bcd4', '#2196f3', '#3f51b5', '#9c27b0', '#e91e63', '#795548'],
@@ -91,13 +87,12 @@ const defaultColors = [
     ['#880e4f', '#bf360c', '#f57f17', '#1b5e20', '#006064', '#0d47a1', '#1a237e', '#311b92', '#6a0dad', '#3e2723'],
 ];
 
-// Global storage for custom colors
-let globalCustomColors: string[] = [];
-
 export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) => {
+    const customColors = useTradingProStore((state) => state.customColors);
+    const addCustomColor = useTradingProStore((state) => state.addCustomColor);
+
     const [isOpen, setIsOpen] = useState(false);
     const [showCustomPicker, setShowCustomPicker] = useState(false);
-    const [customColors, setCustomColors] = useState<string[]>([]);
     const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
     
     const [hue, setHue] = useState(0);
@@ -152,9 +147,8 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
     
     const addCurrentCustomColor = () => {
         const newColor = currentColorWithOpacity;
-        if (!globalCustomColors.includes(newColor) && !defaultColors.flat().includes(newColor)) {
-            globalCustomColors = [...globalCustomColors, newColor];
-            setCustomColors(globalCustomColors);
+        if (!customColors.includes(newColor) && !defaultColors.flat().includes(newColor)) {
+            addCustomColor(newColor);
         }
         setShowCustomPicker(false);
     };
@@ -170,28 +164,24 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
         const rect = triggerRef.current.getBoundingClientRect();
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
-        const popupWidth = 240; // w-60 = 15rem = 240px
-        const popupHeight = showCustomPicker ? 200 : 300; // Approximate heights
+        const popupWidth = 240;
+        const popupHeight = showCustomPicker ? 200 : 300;
         
         let x = rect.left;
-        let y = rect.bottom + 8; // 8px gap (mt-2)
+        let y = rect.bottom + 8;
         
-        // Adjust horizontal position if popup would go off-screen
         if (x + popupWidth > viewportWidth) {
             x = rect.right - popupWidth;
         }
         
-        // Adjust vertical position if popup would go off-screen
         if (y + popupHeight > viewportHeight) {
             y = rect.top - popupHeight - 8;
         }
         
-        // Ensure popup doesn't go off the left edge
         if (x < 8) {
             x = 8;
         }
         
-        // Ensure popup doesn't go off the top edge
         if (y < 8) {
             y = 8;
         }
@@ -212,7 +202,6 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
 
     useEffect(() => {
         if (isOpen) {
-            setCustomColors([...globalCustomColors]);
             setPopupPosition(calculatePopupPosition());
         }
     }, [isOpen, calculatePopupPosition]);
@@ -286,7 +275,6 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
         ? hslToHex(hue, saturation, lightness) 
         : `rgba(${Object.values(hexToRgba(hslToHex(hue, saturation, lightness))).slice(0, 3).join(', ')}, ${opacity / 100})`;
 
-    // Get portal container or create it if it doesn't exist
     const getPortalContainer = () => {
         let container = document.getElementById('color-picker-portal');
         if (!container) {
@@ -300,7 +288,7 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
     const portalContent = isOpen ? (
         <div
             ref={pickerRef}
-            className="fixed z-50 bg-gray-800 rounded-lg shadow-xl border border-gray-700 p-3 w-60"
+            className="fixed z-50 bg-[#0e0e0e] rounded-lg shadow-xl border border-[#2D2D2D] p-3 w-60"
             style={{
                 left: `${popupPosition.x}px`,
                 top: `${popupPosition.y}px`,
@@ -355,20 +343,25 @@ export const CustomColorPicker = ({ color, onChange }: CustomColorPickerProps) =
                             />
                         ))}
                     </div>
-                    <div className="flex flex-wrap items-center gap-1 border-t border-gray-700 pt-2">
-                        {customColors.map((c) => (
-                            <div 
-                                key={c} 
-                                onClick={() => handleColorSelect(c)} 
-                                className="w-4 h-4 rounded-sm cursor-pointer" 
-                                style={{ backgroundColor: c }} 
-                            />
-                        ))}
+                    {customColors.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1 border-t border-[#2D2D2D] pt-2">
+                            {customColors.map((c) => (
+                                <div 
+                                    key={c} 
+                                    onClick={() => handleColorSelect(c)} 
+                                    className="w-4 h-4 rounded-sm cursor-pointer" 
+                                    style={{ backgroundColor: c }} 
+                                />
+                            ))}
+                        </div>
+                    )}
+                    <div className="border-t border-[#2D2D2D] pt-2">
                         <button 
                             onClick={() => setShowCustomPicker(true)} 
-                            className="w-4 h-4 rounded-sm flex items-center justify-center bg-gray-700 hover:bg-gray-600"
+                            className="w-full flex items-center justify-center gap-2 py-1 rounded-md bg-gray-700 hover:bg-gray-600 text-gray-300"
                         >
                             <Plus size={14} />
+                            <span>Add Custom Color</span>
                         </button>
                     </div>
                     <div>

@@ -12,6 +12,7 @@
   "dependencies": {
     "@types/react-color": "^3.0.13",
     "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "lightweight-charts": "^5.0.8",
     "lucide-react": "^0.525.0",
     "react": "^19.1.0",

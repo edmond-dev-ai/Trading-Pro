@@ -23,12 +23,9 @@ const ComingSoon = () => (
 
 export const IndicatorsPanel = ({ onClose }: IndicatorsPanelProps) => {
     const [activeTab, setActiveTab] = useState('Technicals');
-    const { liveData, replayData, replayState, replayCurrentIndex } = useTradingProStore();
+    const { liveData } = useTradingProStore();
 
-    // --- NEW: Generic function to request an indicator from the backend ---
     const requestIndicator = (indicatorName: string, options: Record<string, any>) => {
-        // Determine which dataset to use (live vs. replay)
-        const isReplay = replayState !== 'idle';
         const chartData = liveData;
 
         if (chartData.length === 0) {
@@ -36,10 +33,8 @@ export const IndicatorsPanel = ({ onClose }: IndicatorsPanelProps) => {
             return;
         }
 
-        // Create a unique ID for this indicator instance
         const indicatorId = `${indicatorName.toUpperCase()}_${Object.values(options).join('_')}`;
 
-        // Send the request to the backend
         webSocketService.sendMessage({
             action: 'get_indicator',
             params: {
@@ -47,11 +42,10 @@ export const IndicatorsPanel = ({ onClose }: IndicatorsPanelProps) => {
                 name: indicatorName,
                 ...options
             },
-            // Send the current chart data for calculation
             data: chartData 
         });
 
-        onClose(); // Close panel after requesting
+        onClose();
     };
 
     const indicators = [
@@ -90,8 +84,8 @@ export const IndicatorsPanel = ({ onClose }: IndicatorsPanelProps) => {
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center z-50 pt-20">
-            <div className="bg-[#1e222d] text-white w-full max-w-4xl mx-auto rounded-lg shadow-2xl flex flex-col max-h-[75vh]">
-                <div className="flex-shrink-0 flex items-center justify-between p-3 border-b border-gray-700">
+            <div className="bg-[#0e0e0e] text-white w-full max-w-4xl mx-auto rounded-lg shadow-2xl flex flex-col max-h-[75vh]">
+                <div className="flex-shrink-0 flex items-center justify-between p-3 border-b border-[#2D2D2D]">
                     <div className="relative w-full max-w-xs">
                         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
                         <input
@@ -106,7 +100,7 @@ export const IndicatorsPanel = ({ onClose }: IndicatorsPanelProps) => {
                 </div>
 
                 <div className="flex flex-1 overflow-hidden">
-                    <div className="w-48 bg-gray-900/30 border-r border-gray-700 overflow-y-auto">
+                    <div className="w-48 bg-[#0e0e0e]/30 border-r border-[#2D2D2D] overflow-y-auto">
                         <div className="p-2 space-y-1">
                             {tabs.map((tab) => (
                                 <button

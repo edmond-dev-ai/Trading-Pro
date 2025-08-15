@@ -54,7 +54,7 @@ export const FastTimeframeInput = ({ inputValue, onInputChange, onConfirm, onClo
             onClick={onClose}
         >
             <div 
-                className="bg-[#1e222d] rounded-md shadow-2xl p-4 w-60 text-center"
+                className="bg-[#0e0e0e] rounded-md shadow-2xl p-4 w-60 text-center"
                 onClick={(e) => e.stopPropagation()}
             >
                 <h3 className="text-gray-400 text-sm mb-4">Change interval</h3>

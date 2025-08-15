@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { useTradingProStore, type AppData } from '../store/store';
 import { webSocketService, recalculateIndicators } from './useWebSocketService';
+import { calculateReplayEndDate } from '../utils/timeframeCalculator';
 
 export const useDataService = () => {
     const isLoadingRef = useRef(false);
@@ -9,11 +10,9 @@ export const useDataService = () => {
         const { setState } = useTradingProStore;
         const { symbol, setLiveData, setHasMoreHistory } = useTradingProStore.getState();
         
-        // --- FIX: Clear data immediately to prevent flashing ---
         setLiveData([]);
-        setHasMoreHistory(true); // Assume there's more history until the fetch proves otherwise
+        setHasMoreHistory(true);
 
-        // Use the promise-based requestData to wait for the data
         const initialData = await webSocketService.requestData({
             action: 'get_initial_data',
             instrument: symbol,
@@ -21,11 +20,9 @@ export const useDataService = () => {
             limit: 5000,
         });
 
-        // Once data is received, update the store
         setLiveData(initialData);
         setHasMoreHistory(initialData.length >= 5000);
         setState({ isChangingTimeframe: false });
-        // Recalculate indicators after new data is set
         recalculateIndicators(initialData);
     }, []);
 
@@ -66,13 +63,22 @@ export const useDataService = () => {
         if (isLoadingRef.current) return [];
         isLoadingRef.current = true;
         
+        let endDate: string | undefined;
+        if (replayAnchor?.time && replayAnchor?.timeframe) {
+            // --- MODIFIED: Using the new simplified calculator ---
+            endDate = calculateReplayEndDate(
+                replayAnchor.time as number, 
+                replayAnchor.timeframe, 
+                tf // tf is the target timeframe we're switching to
+            );
+        }
+        
         const data = await webSocketService.requestData({
             action: 'get_full_dataset',
             instrument: symbol,
             timeframe: tf,
             limit: 10000,
-            replay_anchor_time: replayAnchor?.time ? new Date(replayAnchor.time as number * 1000).toISOString() : undefined,
-            replay_anchor_timeframe: replayAnchor?.timeframe,
+            end_date: endDate,
         });
 
         isLoadingRef.current = false;

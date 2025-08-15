@@ -18,7 +18,7 @@ export const ReplayControls = ({ startArming, play, pause, exitReplay, stepForwa
     const isPlaying = replayState === 'active';
 
     return (
-        <div className="bg-[#1e222d] border-t border-b border-gray-700 px-4 h-10 flex items-center relative text-white">
+        <div className="bg-[#0e0e0e] border-t-2 border-b-2 border-[#2D2D2D] px-4 h-10 flex items-center relative text-white">
             
             {/* Centered Navigation Controls */}
             <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center space-x-2">

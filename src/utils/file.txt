@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Settings, Play, BarChartHorizontal } from 'lucide-react';
+import { Settings, Play, BarChartHorizontal, Clock } from 'lucide-react';
 import { SymbolSelect } from './components/SymbolSelect';
 import { TimeframeSelect } from './components/TimeframeSelect';
 import { ReplayControls } from './components/ReplayControls';
@@ -32,13 +32,21 @@ const ScrollToRecentButton = ({ onClick }: { onClick: () => void }) => (
     </button>
 );
 
-// Your function to determine if the timeframe is daily or higher
-const isDailyOrHigherTimeframe = (tf: string): boolean => {
-    if (!tf) return false;
-    const unitMatch = tf.match(/[a-zA-Z]+$/);
-    if (!unitMatch) return false;
-    const unitStr = unitMatch[0].toUpperCase();
-    return unitStr === 'D' || unitStr === 'W' || unitStr === 'MO';
+const getTimeframeInSeconds = (tf: string): number => {
+    if (!tf || tf.length < 2) return 0;
+    const unit = tf.slice(-1).toLowerCase();
+    const valueStr = tf.slice(0, -1);
+    const value = parseInt(valueStr, 10);
+    if (isNaN(value)) return 0;
+
+    switch (unit) {
+        case 'm': return value * 60;
+        case 'h': return value * 60 * 60;
+        case 'd': return value * 24 * 60 * 60;
+        case 'w': return value * 7 * 24 * 60 * 60;
+        case '1M': return value * 30 * 24 * 60 * 60; // Approximation for a month
+        default: return 0;
+    }
 };
 
 
@@ -46,6 +54,7 @@ function App() {
     const { loadInitialDataForTimeframe, fetchMoreHistory, fetchMoreReplayHistory, fetchFullDatasetForTimeframe } = useDataService();
     const { proactivelyFetchNextChunk, stepForward, stepBackward, ...replayEngine } = useReplayEngine();
     
+    // ADDED: Initialize useDrawingService hook
     const { 
         init: initDrawingService,
         handleChartClick,
@@ -66,14 +75,14 @@ function App() {
         replayAnchor,
         isChangingTimeframe,
         indicatorToEdit,
-        drawings,
+        drawings, // ADDED: Destructure drawings from the store
         setReplayData,
         setTimeframe,
         setIsAtLiveEdge,
         setReplayScrollToTime,
         setIndicatorToEdit,
         setState,
-        timezone
+        timezone // ADDED: Destructure timezone from store
     } = useTradingProStore();
 
     const chartComponentRef = useRef<ChartHandle>(null);
@@ -141,37 +150,43 @@ function App() {
         }
     }, [replayState, symbol]);
 
-    const dataForChart = useMemo((): CandlestickData<UTCTimestamp>[] => {
-        if (isChangingTimeframe) {
+const dataForChart = useMemo(() => {
+    const WHITESPACE_COUNT = 10000
+    if (isChangingTimeframe) {
+        return [];
+    }
+    const isReplayMode = replayState !== 'idle' && replayState !== 'standby';
+
+    if (isReplayMode && replayData.length > 0) {
+        // Return raw replay data without timestamp conversion
+        return replayData.slice(0, replayCurrentIndex + 1);
+    } else {
+        const sortedLiveData = [...liveData].sort((a, b) => a.time - b.time);
+        if (sortedLiveData.length === 0) {
             return [];
         }
-        const isReplayMode = replayState !== 'idle' && replayState !== 'standby';
 
-        const isDailyOrHigher = isDailyOrHigherTimeframe(timeframe);
-        const offsetInSeconds = isDailyOrHigher ? 12 * 60 * 60 : 60 * 60;
+        // Use raw timestamps from live data
+        const lastTimestamp = sortedLiveData[sortedLiveData.length - 1].time;
+        const interval = getTimeframeInSeconds(timeframe);
 
-        let dataToProcess: CandlestickData<UTCTimestamp>[];
-
-        if (isReplayMode && replayData.length > 0) {
-            dataToProcess = replayData.slice(0, replayCurrentIndex + 1).map(d => ({
-                ...d,
-                time: ((d.time as number) + offsetInSeconds) as UTCTimestamp,
-            }));
-        } else {
-            const sortedLiveData = [...liveData].sort((a, b) => (a.time as number) - (b.time as number));
-            if (sortedLiveData.length === 0) {
-                return [];
-            }
-            dataToProcess = sortedLiveData.map(d => ({
-                ...d,
-                time: ((d.time as number) + offsetInSeconds) as UTCTimestamp,
-            }));
+        if (interval === 0) {
+            return sortedLiveData;
         }
 
-        return dataToProcess;
+        const dataWithWhitespace: (CandlestickData<UTCTimestamp> | WhitespaceData<UTCTimestamp>)[] = [...sortedLiveData];
 
-    }, [isChangingTimeframe, replayState, replayData, replayCurrentIndex, liveData, timeframe]);
+        const lastKnownTime = lastTimestamp as number;
+        for (let i = 1; i <= WHITESPACE_COUNT; i++) {
+            const nextTime = lastKnownTime + (interval * i);
+            dataWithWhitespace.push({ time: nextTime as UTCTimestamp });
+        }
+        return dataWithWhitespace;
+    }
 
+}, [isChangingTimeframe, replayState, replayData, replayCurrentIndex, liveData, timeframe]); // Removed timezone from dependencies // Add timezone to dependencies
+
+    // MODIFIED: Replaced with the version from the buggy file that correctly calculates lastCandleIndex in replay mode and has updated dependencies.
     const handleVisibleLogicalRangeChange = useCallback((range: LogicalRange | null) => {
         if (!range || dataForChart.length === 0) return;
 
@@ -180,7 +195,10 @@ function App() {
             hasMoreHistory: currentHasMoreHistory
         } = useTradingProStore.getState();
 
-        const lastCandleIndex = dataForChart.length -1;
+        const lastCandleIndex = (currentReplayState === 'idle' 
+            ? liveData.length 
+            : replayData.slice(0, replayCurrentIndex + 1).length
+        ) - 1;
         
         const isAtEdge = range.to >= lastCandleIndex; 
         setIsAtLiveEdge(isAtEdge);
@@ -192,8 +210,9 @@ function App() {
                 fetchMoreReplayHistory();
             }
         }
-    }, [dataForChart.length, fetchMoreHistory, fetchMoreReplayHistory, setIsAtLiveEdge]);
+    }, [dataForChart.length, fetchMoreHistory, fetchMoreReplayHistory, setIsAtLiveEdge, liveData.length, replayData, replayCurrentIndex, replayState]);
 
+    // ADDED: Chart click and crosshair move handlers
     const onChartClickHandler = useCallback((param: MouseEventParams) => {
         if (replayState === 'arming' && param.time) {
             replayEngine.selectReplayStart(param.time as UTCTimestamp);
@@ -278,7 +297,7 @@ function App() {
                 />
             )}
 
-            <header className='flex-shrink-0 flex items-center justify-between h-10 px-2 border-b-2 border-[#2D2D2D] bg-[#0e0e0e]'>
+            <header className='flex-shrink-0 flex items-center justify-between h-10 px-2 border-b border-gray-700 bg-[#1e222d]'>
                 <div className="flex items-center space-x-2">
                     <button className="w-7 h-7 bg-purple-600 rounded-full flex items-center justify-center font-bold text-sm focus:outline-none ring-2 ring-transparent focus:ring-purple-400">
                         E
@@ -288,6 +307,7 @@ function App() {
                 </div>
 
                 <div className="flex items-center space-x-2">
+                    {/* ADDED: Timezone selector to the middle of the header */}
                      <button onClick={() => setIsIndicatorsPanelOpen(true)} className="flex items-center space-x-1.5 p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white text-xs" title="Indicators">
                         <BarChartHorizontal size={14} />
                         <span>Indicators</span>
@@ -306,7 +326,7 @@ function App() {
             </header>
 
             <div className='flex flex-1 overflow-hidden'>
-                <div className='flex-shrink-0 w-12 border-r-2 border-[#2D2D2D] bg-[#0e0e0e]'>
+                <div className='flex-shrink-0 w-12 border-r border-gray-700 bg-[#1e222d]'>
                     <DrawingToolbar />
                 </div>
 
@@ -326,31 +346,31 @@ function App() {
                         inProgressDrawing={inProgressDrawing}
                         drawings={drawings}
                         hoveredDrawing={hoveredDrawing}
-                        timezone={timezone}
+                        timezone={timezone} // ADDED: Pass timezone to ChartComponent
                     />
                     {showScrollButton && (
                         <ScrollToRecentButton onClick={handleScrollToRecent} />
                     )}
                 </main>
 
-                <div className='flex-shrink-0 w-12 border-l-2 border-[#2D2D2D] bg-[#0e0e0e]'></div>
+                <div className='flex-shrink-0 w-12 border-l border-gray-700 bg-[#1e222d]'></div>
             </div>
 
             <footer className="flex-shrink-0">
-                {isReplayActive && (
-                    <ReplayControls
-                        startArming={replayEngine.startArming}
-                        play={replayEngine.play}
-                        pause={replayEngine.pause}
-                        exitReplay={replayEngine.exitReplay}
-                        stepForward={stepForward}
-                        stepBackward={stepBackward}
-                    />
-                )}
-                <div className='h-8 border-t-2 border-[#2D2D2D] bg-[#0e0e0e] flex items-center justify-end px-3'>
-                    <TimezoneButton />
-                </div>
-            </footer>
+    {isReplayActive && (
+        <ReplayControls
+            startArming={replayEngine.startArming}
+            play={replayEngine.play}
+            pause={replayEngine.pause}
+            exitReplay={replayEngine.exitReplay}
+            stepForward={stepForward}
+            stepBackward={stepBackward}
+        />
+    )}
+    <div className='h-8 border-t border-gray-700 bg-[#1e222d] flex items-center justify-end px-3'>
+        <TimezoneButton />
+    </div>
+</footer>
         </div>
     );
 }

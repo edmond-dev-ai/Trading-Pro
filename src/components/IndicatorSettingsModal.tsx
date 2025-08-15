@@ -37,7 +37,6 @@ export const IndicatorSettingsModal = ({ indicatorGroup, onClose }: IndicatorSet
         return null;
     }
 
-    // Get the full list of active indicators from the store
     const originalIds = new Set(indicatorGroup.map(ind => ind.id));
     const liveIndicatorGroup = activeIndicators.filter(ind => originalIds.has(ind.id));
 
@@ -48,15 +47,10 @@ export const IndicatorSettingsModal = ({ indicatorGroup, onClose }: IndicatorSet
             return;
         }
 
-        // Preserve the most up-to-date styles from the live indicator in the store.
         const { color, isVisible } = liveIndicator;
-
         const indicator = indicatorGroup[0];
-        // Generate the new base ID, which will be used by all lines of the new indicator.
         const newId = `${indicator.name.split('_')[0].toUpperCase()}_${Object.values(options).join('_')}`;
 
-        // Send a get_indicator message with the new inputs and the PRESERVED styles.
-        // The store will handle removing the old indicator group and adding the new one.
         webSocketService.sendMessage({
             action: 'get_indicator',
             params: {
@@ -120,9 +114,9 @@ export const IndicatorSettingsModal = ({ indicatorGroup, onClose }: IndicatorSet
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-            <div className="bg-gray-800 text-white w-full max-w-md mx-auto rounded-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="bg-[#0e0e0e] text-white w-full max-w-md mx-auto rounded-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
                 {/* Header */}
-                <div className="flex-shrink-0 flex items-center justify-between p-3 border-b border-gray-700">
+                <div className="flex-shrink-0 flex items-center justify-between p-3 border-b border-[#2D2D2D]">
                     <h2 className="text-base font-medium">{getDisplayName(indicatorGroup)}</h2>
                     <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded">
                         <X size={18} />
@@ -130,7 +124,7 @@ export const IndicatorSettingsModal = ({ indicatorGroup, onClose }: IndicatorSet
                 </div>
 
                 {/* Tabs */}
-                <div className="flex-shrink-0 flex border-b border-gray-700">
+                <div className="flex-shrink-0 flex border-b border-[#2D2D2D]">
                      {tabs.map(tab => (
                         <button
                             key={tab}
@@ -152,7 +146,7 @@ export const IndicatorSettingsModal = ({ indicatorGroup, onClose }: IndicatorSet
                 </div>
 
                 {/* Footer */}
-                <div className="flex-shrink-0 flex items-center justify-end p-3 border-t border-gray-700 bg-gray-900 space-x-2">
+                <div className="flex-shrink-0 flex items-center justify-end p-3 border-t border-[#2D2D2D] bg-[#0e0e0e] space-x-2">
                     <button onClick={onClose} className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-sm font-semibold">
                         Cancel
                     </button>

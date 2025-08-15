@@ -95,8 +95,8 @@ export const TimeframeSelect = () => {
 
     return (
         <>
-            <div className="flex items-center bg-gray-900 bg-opacity-50 rounded-md" ref={dropdownRef}>
-                <div className="flex items-center border-r border-gray-700">
+            <div className="flex items-center bg-[#0e0e0e] bg-opacity-50 rounded-md" ref={dropdownRef}>
+                <div className="flex items-center border-r border-[#2D2D2D]">
                     {displayTimeframes.map(tf => (
                         <button key={tf} onClick={() => handleSelect(tf)} className={`px-2 py-1 text-xs transition-colors duration-200 ${selectedTimeframe === tf ? 'text-blue-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
                             {displayTfLabel(tf)}
@@ -108,13 +108,13 @@ export const TimeframeSelect = () => {
                         <svg className={`w-4 h-4 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"></path></svg>
                     </button>
                     {isDropdownOpen && (
-                        <div className="absolute top-full mt-2 -ml-40 w-64 bg-gray-800 rounded-md shadow-lg z-30 p-2">
+                        <div className="absolute top-full mt-2 -ml-40 w-64 bg-[#0e0e0e] rounded-md shadow-lg z-30 p-2 border border-[#2D2D2D]">
                             <div className="max-h-80 overflow-y-auto">
                                 {Object.entries(allTimeframes).map(([category, timeframes]) => (
                                     timeframes.length > 0 && <div key={category} className="mb-2">
                                         <p className="text-xs text-gray-500 uppercase px-2 mb-1">{category}</p>
                                         <div className="flex flex-col space-y-1">
-                                            {timeframes.map((tf: string) => ( // Explicitly type tf
+                                            {timeframes.map((tf: string) => (
                                                 <div key={tf} className="flex items-center w-full group">
                                                     <button onClick={() => handleSelect(tf)} className={`flex-grow text-left py-1 px-3 text-sm rounded-l-md ${selectedTimeframe === tf ? 'bg-blue-600 text-white' : 'text-gray-300 group-hover:bg-gray-700'}`}>
                                                         {formatLabel(tf)}
@@ -133,7 +133,7 @@ export const TimeframeSelect = () => {
                                     </div>
                                 ))}
                             </div>
-                            <hr className="border-gray-700 my-2" />
+                            <hr className="border-[#2D2D2D] my-2" />
                             <button onClick={() => { setIsModalOpen(true); setIsDropdownOpen(false); }} className="w-full text-left py-1 px-3 text-sm text-blue-400 hover:bg-gray-700 rounded-md">
                                 + Add custom interval
                             </button>
@@ -143,7 +143,7 @@ export const TimeframeSelect = () => {
             </div>
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-sm">
+                    <div className="bg-[#0e0e0e] p-6 rounded-lg shadow-xl w-full max-w-sm border border-[#2D2D2D]">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-bold text-white">Add custom interval</h3>
                             <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>

@@ -7,7 +7,6 @@ interface SettingsPanelProps {
     onClose: () => void;
 }
 
-// Reusable component for a settings row
 const SettingsRow = ({ label, children }: { label: string, children: React.ReactNode }) => (
     <div className="flex items-center justify-between py-1">
         <label className="text-sm text-gray-300">{label}</label>
@@ -15,10 +14,8 @@ const SettingsRow = ({ label, children }: { label: string, children: React.React
     </div>
 );
 
-// Reusable disabled checkbox
 const DisabledCheckbox = ({ checked = false }) => <input type="checkbox" checked={checked} disabled className="w-4 h-4 rounded border-gray-600 bg-gray-700 opacity-50" />;
 
-// --- Functional Symbol Section ---
 const SymbolSection = () => {
     const { candlestickColors, setCandlestickColors } = useTradingProStore();
     return (
@@ -42,7 +39,6 @@ const SymbolSection = () => {
     );
 }
 
-// --- UI Placeholders for other sections ---
 const CanvasSection = () => {
     const { chartAppearance, setChartAppearance } = useTradingProStore();
     return (
@@ -83,9 +79,8 @@ export const SettingsPanel = ({ onClose }: SettingsPanelProps) => {
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-            {/* --- MODIFIED: Reduced width --- */}
-            <div className="bg-gray-800 text-white w-full max-w-3xl mx-auto rounded-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-                <div className="flex-shrink-0 flex items-center justify-between p-3 border-b border-gray-700">
+            <div className="bg-[#0e0e0e] text-white w-full max-w-3xl mx-auto rounded-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+                <div className="flex-shrink-0 flex items-center justify-between p-3 border-b border-[#2D2D2D]">
                     <h2 className="text-base font-medium">Chart settings</h2>
                     <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded">
                         <X size={18} />
@@ -93,7 +88,7 @@ export const SettingsPanel = ({ onClose }: SettingsPanelProps) => {
                 </div>
 
                 <div className="flex flex-1 overflow-hidden">
-                    <div className="w-48 bg-gray-900 border-r border-gray-700 overflow-y-auto">
+                    <div className="w-48 bg-[#0e0e0e] border-r border-[#2D2D2D] overflow-y-auto">
                         <div className="p-2 space-y-1">
                             {sections.map((section) => {
                                 const Icon = section.icon;
@@ -120,7 +115,7 @@ export const SettingsPanel = ({ onClose }: SettingsPanelProps) => {
                     </div>
                 </div>
 
-                <div className="flex-shrink-0 flex items-center justify-between p-3 border-t border-gray-700 bg-gray-900">
+                <div className="flex-shrink-0 flex items-center justify-between p-3 border-t border-[#2D2D2D] bg-[#0e0e0e]">
                     <select disabled className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500 opacity-50">
                         <option>Default template</option>
                     </select>
