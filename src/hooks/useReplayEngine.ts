@@ -104,26 +104,26 @@ export const useReplayEngine = () => {
         const { timeframe: currentGlobalTimeframe, timezone } = useTradingProStore.getState();
 
         if (useTradingProStore.getState().replayState === 'arming') {
-            const fullData = await fetchFullDatasetForTimeframe(currentGlobalTimeframe);
-            if (!fullData || fullData.length === 0) {
-                console.error("Failed to fetch data for replay start.");
-                setReplayState('idle');
-                return;
-            }
-
-            // --- FIX APPLIED HERE ---
+            // --- TIME CORRECTION LOGIC ---
             // 1. Reverse the chart's internal timezone conversion to get true UTC
             const timezoneOffsetMilliseconds = getTimezoneOffset(timezone, new Date((displayTime as number) * 1000));
-            console.log("Historical date:", new Date(displayTime as number * 1000));
-console.log("Timezone offset (ms):", timezoneOffsetMilliseconds);
-console.log("Timezone offset (hours):", timezoneOffsetMilliseconds / 1000 / 3600);
             const timezoneOffsetSeconds = timezoneOffsetMilliseconds / 1000;
             const trueUtcTime = (displayTime as number) - timezoneOffsetSeconds;
 
             // 2. Reverse the manual visual offset we added in App.tsx
             const manualOffsetSeconds = isDailyOrHigherTimeframe(currentGlobalTimeframe) ? 12 * 3600 : 3600;
             const serverTime = trueUtcTime - manualOffsetSeconds;
-            // --- END OF FIX ---
+            // --- END OF TIME CORRECTION ---
+
+            // --- MODIFIED: Pass the corrected time to the data fetching function ---
+            const endDateForApi = new Date(serverTime * 1000).toISOString();
+            const fullData = await fetchFullDatasetForTimeframe(currentGlobalTimeframe, endDateForApi);
+            
+            if (!fullData || fullData.length === 0) {
+                console.error("Failed to fetch data for replay start.");
+                setReplayState('idle');
+                return;
+            }
 
             // 3. Use the fully corrected serverTime to find the starting candle
             const startIndex = fullData.findIndex(d => d.time === serverTime);

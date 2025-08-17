@@ -58,14 +58,18 @@ export const useDataService = () => {
         });
     }, []);
 
-    const fetchFullDatasetForTimeframe = useCallback(async (tf: string): Promise<AppData[]> => {
+    // --- MODIFIED: This function now accepts an optional 'customEndDate' ---
+    const fetchFullDatasetForTimeframe = useCallback(async (tf: string, customEndDate?: string): Promise<AppData[]> => {
         const { symbol, replayAnchor } = useTradingProStore.getState();
         if (isLoadingRef.current) return [];
         isLoadingRef.current = true;
         
-        let endDate: string | undefined;
-        if (replayAnchor?.time && replayAnchor?.timeframe) {
-            // --- MODIFIED: Using the new simplified calculator ---
+        let endDate: string | undefined = customEndDate;
+
+        // If a specific date wasn't passed (i.e., we're not starting a new replay),
+        // check if we need to calculate it from the replay anchor. This handles
+        // changing the timeframe while a replay is already active.
+        if (!endDate && replayAnchor?.time && replayAnchor?.timeframe) {
             endDate = calculateReplayEndDate(
                 replayAnchor.time as number, 
                 replayAnchor.timeframe, 
@@ -78,6 +82,8 @@ export const useDataService = () => {
             instrument: symbol,
             timeframe: tf,
             limit: 10000,
+            // This will now be the specific date from the user's click,
+            // the date from the replay anchor, or undefined (for the latest data).
             end_date: endDate,
         });
 
