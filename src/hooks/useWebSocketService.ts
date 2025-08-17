@@ -100,7 +100,7 @@ class WebSocketService {
 
         this.isConnecting = true;
         this.connectionPromise = new Promise((resolve, reject) => {
-            this.socket = new WebSocket('ws://127.0.0.1:8000/ws');
+            this.socket = new WebSocket('ws://3.71.70.69:8000/ws');
             this.socket.onopen = () => {
                 console.log('WebSocket connection established.');
                 this.isConnecting = false;
