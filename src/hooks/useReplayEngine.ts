@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useTradingProStore } from '../store/store';
 import { useDataService } from './useDataService';
 import type { UTCTimestamp } from 'lightweight-charts';
-import { recalculateIndicators } from './useWebSocketService';
+import { webSocketService, recalculateIndicators } from './useWebSocketService'; 
 import { getTimezoneOffset } from 'date-fns-tz';
 
 // Helper function to determine if the timeframe is daily or higher
@@ -27,7 +27,7 @@ export const useReplayEngine = () => {
        appendReplayData,
    } = useTradingProStore();
 
-   const { fetchFullDatasetForTimeframe, fetchFutureReplayChunk, loadInitialDataForTimeframe } = useDataService();
+   const { fetchFutureReplayChunk, loadInitialDataForTimeframe } = useDataService();
    const playIntervalRef = useRef<number | undefined>(undefined);
    const isFetchingFuture = useRef(false);
 
@@ -101,48 +101,52 @@ export const useReplayEngine = () => {
    }, [setReplayState]);
 
     const selectReplayStart = useCallback(async (displayTime: UTCTimestamp) => {
-        const { timeframe: currentGlobalTimeframe, timezone } = useTradingProStore.getState();
+        const { timeframe: currentGlobalTimeframe, timezone, symbol } = useTradingProStore.getState();
 
         if (useTradingProStore.getState().replayState === 'arming') {
-            // --- TIME CORRECTION LOGIC ---
-            // 1. Reverse the chart's internal timezone conversion to get true UTC
+            
             const timezoneOffsetMilliseconds = getTimezoneOffset(timezone, new Date((displayTime as number) * 1000));
             const timezoneOffsetSeconds = timezoneOffsetMilliseconds / 1000;
             const trueUtcTime = (displayTime as number) - timezoneOffsetSeconds;
-
-            // 2. Reverse the manual visual offset we added in App.tsx
-            const manualOffsetSeconds = isDailyOrHigherTimeframe(currentGlobalTimeframe) ? 12 * 3600 : 3600;
+            const manualOffsetSeconds = isDailyOrHigherTimeframe(currentGlobalTimeframe) ? 10 * 3600 : 0;
             const serverTime = trueUtcTime - manualOffsetSeconds;
-            // --- END OF TIME CORRECTION ---
-
-            // --- MODIFIED: Pass the corrected time to the data fetching function ---
-            const endDateForApi = new Date(serverTime * 1000).toISOString();
-            const fullData = await fetchFullDatasetForTimeframe(currentGlobalTimeframe, endDateForApi);
             
+            const endDate = new Date(serverTime * 1000).toISOString();
+            console.log(`Requesting replay data for ${symbol} ending before ${endDate}`);
+
+            const fullData = await webSocketService.requestData({
+                action: 'get_replay_start_data',
+                instrument: symbol,
+                timeframe: currentGlobalTimeframe,
+                limit: 10000, 
+                end_date: endDate,
+            });
+
+            // --- START OF FIX ---
+            // If the backend returns no data, exit gracefully.
             if (!fullData || fullData.length === 0) {
-                console.error("Failed to fetch data for replay start.");
+                console.error("Failed to fetch data for replay start (received empty dataset).");
                 setReplayState('idle');
                 return;
             }
 
-            // 3. Use the fully corrected serverTime to find the starting candle
-            const startIndex = fullData.findIndex(d => d.time === serverTime);
+            // Since the backend sends data *before* the end_date, the closest candle
+            // to our click is simply the LAST one in the returned array.
+            const startIndex = fullData.length - 1;
+            const actualStartTime = fullData[startIndex].time as UTCTimestamp;
+            
+            console.log(`Target time was ${serverTime}. Found closest start time at ${actualStartTime}.`);
 
-            if (startIndex !== -1) {
-                // 4. Use the corrected serverTime for the anchor and for scrolling
-                const anchor = { time: serverTime as UTCTimestamp, timeframe: currentGlobalTimeframe };
-                loadReplayData(fullData, startIndex, anchor);
-                setReplayState('paused');
-                setReplayScrollToTime(serverTime as UTCTimestamp);
-                proactivelyFetchNextChunk();
-
-                recalculateIndicators(fullData);
-            } else {
-                console.error("Could not find selected start time in the fetched data. Display time:", displayTime, "Calculated server time:", serverTime);
-                setReplayState('idle');
-            }
+            const anchor = { time: actualStartTime, timeframe: currentGlobalTimeframe };
+            
+            loadReplayData(fullData, startIndex, anchor);
+            setReplayState('paused');
+            setReplayScrollToTime(actualStartTime); // Scroll to the actual candle we found
+            proactivelyFetchNextChunk();
+            recalculateIndicators(fullData);
+            // --- END OF FIX ---
         }
-    }, [fetchFullDatasetForTimeframe, setReplayState, loadReplayData, setReplayScrollToTime, proactivelyFetchNextChunk]);
+    }, [setReplayState, loadReplayData, setReplayScrollToTime, proactivelyFetchNextChunk]);
 
 
    const play = useCallback(() => {
