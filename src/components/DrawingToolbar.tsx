@@ -632,7 +632,7 @@ export const DrawingToolbar = () => {
     const currentCategory = getCurrentCategory();
 
     return (
-        <div className="flex flex-col items-center p-1.5 space-y-1">
+        <div className="flex flex-row md:flex-col items-center justify-around h-full">
             {isFavoriteToolbarVisible && <FavoriteDrawingToolsToolbar />}
             {selectedDrawingId && <DrawingPropertiesPanel />}
 

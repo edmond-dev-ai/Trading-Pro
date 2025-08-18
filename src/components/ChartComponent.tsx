@@ -112,6 +112,22 @@ const ChartComponentImpl = React.forwardRef<ChartHandle, ChartComponentProps>(
             chartAppearance, candlestickColors, activeIndicators, replayState, timeframe, drawingDefaults
         } = useTradingProStore();
 
+        useEffect(() => {
+            const chartContainer = chartContainerRef.current;
+            if (!chartContainer) return;
+        
+            const resizeObserver = new ResizeObserver(entries => {
+                const { width, height } = entries[0].contentRect;
+                chartRef.current?.resize(width, height);
+            });
+        
+            resizeObserver.observe(chartContainer);
+        
+            return () => {
+                resizeObserver.unobserve(chartContainer);
+            };
+        }, []);
+
         const displayCandles = useMemo(() => {
             if (timezone === 'Etc/UTC' || !data || data.length === 0) {
                 return data;

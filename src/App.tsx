@@ -305,8 +305,10 @@ function App() {
                 </div>
             </header>
 
-            <div className='flex flex-1 overflow-hidden'>
-                <div className='flex-shrink-0 w-12 border-r-2 border-[#2D2D2D] bg-[#0e0e0e]'>
+            {/* RESPONSIVE MAIN LAYOUT */}
+            <div className='flex flex-col md:flex-row flex-1 overflow-hidden'>
+                {/* Desktop Left Toolbar: Hidden on mobile, shown on medium screens and up */}
+                <div className='hidden md:block flex-shrink-0 w-12 border-r-2 border-[#2D2D2D] bg-[#0e0e0e]'>
                     <DrawingToolbar />
                 </div>
 
@@ -333,7 +335,8 @@ function App() {
                     )}
                 </main>
 
-                <div className='flex-shrink-0 w-12 border-l-2 border-[#2D2D2D] bg-[#0e0e0e]'></div>
+                {/* Desktop Right Sidebar: Hidden on mobile */}
+                <div className='hidden md:block flex-shrink-0 w-12 border-l-2 border-[#2D2D2D] bg-[#0e0e0e]'></div>
             </div>
 
             <footer className="flex-shrink-0">
@@ -347,6 +350,12 @@ function App() {
                         stepBackward={stepBackward}
                     />
                 )}
+                
+                {/* Mobile Drawing Toolbar: Only shown on mobile, hidden on medium screens up */}
+                <div className="md:hidden h-12 border-t-2 border-[#2D2D2D] bg-[#0e0e0e]">
+                    <DrawingToolbar />
+                </div>
+
                 <div className='h-8 border-t-2 border-[#2D2D2D] bg-[#0e0e0e] flex items-center justify-end px-3'>
                     <TimezoneButton />
                 </div>
